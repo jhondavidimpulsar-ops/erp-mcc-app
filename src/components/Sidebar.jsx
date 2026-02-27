@@ -14,9 +14,10 @@ export default function Sidebar() {
 
     const links = [
         { to: '/dashboard', label: 'Dashboard' },
-        { to: '/productos', label: 'Productos' },
-        { to: '/inventario', label: 'Inventario' },
         { to: '/ventas', label: 'Ventas' },
+        { to: '/inventario', label: 'Inventario' },
+        { to: '/productos', label: 'Productos' },
+        { to: '/ordenes', label: 'Órdenes de Compra' },
         { to: '/clientes', label: 'Clientes' },
         { to: '/empleados', label: 'Empleados' },
     ]

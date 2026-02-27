@@ -7,6 +7,8 @@ import Inventario from './pages/erp/Inventario'
 import Clientes from './pages/erp/Clientes'
 import Ventas from './pages/erp/Ventas'
 import Empleados from './pages/erp/Empleados'
+import Ordenes from './pages/erp/Ordenes'
+
 
 
 function ProtectedRoute({ children }) {
@@ -26,6 +28,7 @@ function AppRoutes() {
             <Route path="/clientes" element={<ProtectedRoute><Clientes /></ProtectedRoute>} />
             <Route path="/ventas" element={<ProtectedRoute><Ventas /></ProtectedRoute>} />
             <Route path="/empleados" element={<ProtectedRoute><Empleados /></ProtectedRoute>} />
+            <Route path="/ordenes" element={<ProtectedRoute><Ordenes /></ProtectedRoute>} />
             <Route path="*" element={<Navigate to="/login" />} />
         </Routes>
     )
