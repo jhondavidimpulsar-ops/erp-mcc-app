@@ -21,6 +21,7 @@ export default function Sidebar() {
         { to: '/clientes', label: 'Clientes' },
         { to: '/empleados', label: 'Empleados' },
         { to: '/provedores', label: 'Provedores' },
+        { to: '/reportes', label: 'Reportes' },
     ]
 
     return (

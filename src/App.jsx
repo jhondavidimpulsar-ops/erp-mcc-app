@@ -9,7 +9,7 @@ import Ventas from './pages/erp/Ventas'
 import Empleados from './pages/erp/Empleados'
 import Ordenes from './pages/erp/Ordenes'
 import Provedores from "./pages/erp/Provedores.jsx";
-
+import Reportes from './pages/erp/Reportes'
 
 
 function ProtectedRoute({ children }) {
@@ -31,6 +31,7 @@ function AppRoutes() {
             <Route path="/empleados" element={<ProtectedRoute><Empleados /></ProtectedRoute>} />
             <Route path="/ordenes" element={<ProtectedRoute><Ordenes /></ProtectedRoute>} />
             <Route path="/provedores" element={<ProtectedRoute><Provedores /></ProtectedRoute>} />
+            <Route path="/reportes" element={<ProtectedRoute><Reportes /></ProtectedRoute>} />
             <Route path="*" element={<Navigate to="/login" />} />
         </Routes>
     )
