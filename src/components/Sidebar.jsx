@@ -20,6 +20,7 @@ export default function Sidebar() {
         { to: '/ordenes', label: 'Órdenes de Compra' },
         { to: '/clientes', label: 'Clientes' },
         { to: '/empleados', label: 'Empleados' },
+        { to: '/provedores', label: 'Provedores' },
     ]
 
     return (
