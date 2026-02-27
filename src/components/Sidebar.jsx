@@ -18,6 +18,7 @@ export default function Sidebar() {
         { to: '/inventario', label: 'Inventario' },
         { to: '/ventas', label: 'Ventas' },
         { to: '/clientes', label: 'Clientes' },
+        { to: '/empleados', label: 'Empleados' },
     ]
 
     return (
