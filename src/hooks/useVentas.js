@@ -3,11 +3,27 @@ import { supabase } from '../supabaseClient'
 
 export function useVentas() {
     const [ventas, setVentas] = useState([])
+    const [sucursales, setSucursales] = useState([])
+    const [inventario, setInventario] = useState([])
     const [loading, setLoading] = useState(true)
 
     useEffect(() => {
         fetchVentas()
+        fetchSucursales()
     }, [])
+
+    async function fetchSucursales() {
+        const { data } = await supabase.from('sucursales').select('id, nombre, moneda, simbolo')
+        if (data) setSucursales(data)
+    }
+
+    async function fetchInventario(sucursalId) {
+        const { data } = await supabase
+            .from('inventario')
+            .select('productos_id, cantidad')
+            .eq('sucursales_id', sucursalId)
+        if (data) setInventario(data)
+    }
 
     async function fetchVentas() {
         const { data, error } = await supabase
@@ -109,6 +125,5 @@ export function useVentas() {
         if (!error) fetchVentas()
         return { error }
     }
-
-    return { ventas, loading, registrarVenta, eliminarVenta }
+    return { ventas, sucursales, inventario, loading, registrarVenta, eliminarVenta, fetchInventario }
 }

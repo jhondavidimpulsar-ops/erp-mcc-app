@@ -4,13 +4,16 @@ import { useVentas } from '../../hooks/useVentas'
 import { useClientes } from '../../hooks/useClientes'
 import { useProductos } from '../../hooks/useProductos'
 import { useEmpleado } from '../../hooks/useEmpleado'
+import { useSucursales } from '../../hooks/useSucursales'
+import { formatMoneda } from '../../utils/formatMoneda'
 import { supabase } from '../../supabaseClient'
 
 export default function Ventas() {
-    const { ventas, loading, registrarVenta, eliminarVenta } = useVentas()
+    const { ventas, loading, registrarVenta, eliminarVenta, inventario, fetchInventario } = useVentas()
     const { clientes } = useClientes()
     const { productos } = useProductos()
     const { empleado } = useEmpleado()
+    const { sucursales } = useSucursales()
 
     const [mostrarForm, setMostrarForm] = useState(false)
     const [sucursalId, setSucursalId] = useState('')
@@ -25,6 +28,10 @@ export default function Ventas() {
     const [cantidad, setCantidad] = useState(1)
     const [error, setError] = useState(null)
     const [exito, setExito] = useState(false)
+
+    const sucursalActual = sucursales?.find(s => s.id === sucursalId)
+    const moneda = sucursalActual?.moneda ?? 'USD'
+    const simbolo = sucursalActual?.simbolo ?? '$'
 
     const fetchTiposPago = async () => {
         const { data } = await supabase.from('tipo_pago').select('*')
@@ -44,9 +51,15 @@ export default function Ventas() {
 
     const handleAgregarAlCarrito = () => {
         if (!productoSeleccionado) return
-
         const producto = productos.find(p => p.id === productoSeleccionado)
         if (!producto) return
+
+        const stock = inventario.find(i => i.productos_id === productoSeleccionado)
+        const cantidadEnCarrito = carrito.find(i => i.productos_id === productoSeleccionado)?.cantidad ?? 0
+
+        if (Number(cantidad) > (stock?.cantidad ?? 0) - cantidadEnCarrito) {
+            return setError(`Stock insuficiente. Disponible: ${(stock?.cantidad ?? 0) - cantidadEnCarrito}`)
+        }
 
         const existente = carrito.find(item => item.productos_id === productoSeleccionado)
         if (existente) {
@@ -61,11 +74,12 @@ export default function Ventas() {
                 nombre: producto.nombre,
                 codigo: producto.codigo,
                 precio: producto.precio,
-                costo: producto.costo,  // ← agregar esta línea
+                costo: producto.costo,
                 cantidad: Number(cantidad),
             }])
         }
 
+        setError(null)
         setProductoSeleccionado('')
         setBusquedaProducto('')
         setCantidad(1)
@@ -127,10 +141,14 @@ export default function Ventas() {
         setError(null)
     }
 
-    const productosFiltrados = productos.filter(p =>
-        p.nombre.toLowerCase().includes(busquedaProducto.toLowerCase()) ||
-        p.codigo?.toLowerCase().includes(busquedaProducto.toLowerCase())
-    )
+    const productosFiltrados = productos.filter(p => {
+        const stock = inventario.find(i => i.productos_id === p.id)
+        const tieneStock = stock && stock.cantidad > 0
+        const coincideBusqueda =
+            p.nombre.toLowerCase().includes(busquedaProducto.toLowerCase()) ||
+            p.codigo?.toLowerCase().includes(busquedaProducto.toLowerCase())
+        return tieneStock && coincideBusqueda
+    })
 
     const clientesFiltrados = clientes.filter(c =>
         c.nombre.toLowerCase().includes(busquedaCliente.toLowerCase()) ||
@@ -161,14 +179,17 @@ export default function Ventas() {
                         </div>
                     )}
 
-                    {/* Fila superior: Sucursal + Cliente */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <label className="text-sm font-medium text-gray-700 mb-1 block">Sucursal</label>
                             <select
                                 className="border border-gray-300 rounded-lg px-4 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 value={sucursalId}
-                                onChange={(e) => setSucursalId(e.target.value)}
+                                onChange={(e) => {
+                                    setSucursalId(e.target.value)
+                                    if (e.target.value) fetchInventario(e.target.value)
+                                    setCarrito([])
+                                }}
                             >
                                 <option value="">Selecciona una sucursal</option>
                                 {empleado?.empleados_sucursales?.map(es => (
@@ -204,23 +225,24 @@ export default function Ventas() {
                                     )}
                                 </div>
                             )}
-                            {clienteId && (
-                                <p className="text-green-600 text-xs mt-1">✅ Cliente seleccionado</p>
-                            )}
+                            {clienteId && <p className="text-green-600 text-xs mt-1">✅ Cliente seleccionado</p>}
                         </div>
                     </div>
 
-                    {/* Agregar productos */}
                     <div>
                         <label className="text-sm font-medium text-gray-700 mb-1 block">
                             Agregar producto <span className="text-gray-400 font-normal">(Enter para agregar)</span>
                         </label>
+                        {!sucursalId && (
+                            <p className="text-yellow-600 text-xs mb-2">⚠️ Selecciona una sucursal primero para ver los productos disponibles.</p>
+                        )}
                         <div className="flex gap-2 items-start">
                             <div className="flex flex-col flex-1">
                                 <input
                                     className="border border-gray-300 rounded-lg px-4 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     placeholder="Buscar por nombre o código..."
                                     value={busquedaProducto}
+                                    disabled={!sucursalId}
                                     onChange={(e) => {
                                         setBusquedaProducto(e.target.value)
                                         setProductoSeleccionado('')
@@ -232,19 +254,29 @@ export default function Ventas() {
                                 {mostrarSugerencias && busquedaProducto && (
                                     <div className="border border-gray-200 rounded-lg max-h-48 overflow-y-auto mt-1 z-10 bg-white shadow-md">
                                         {productosFiltrados.length === 0 ? (
-                                            <p className="px-4 py-2 text-gray-400 text-sm">No se encontraron productos</p>
+                                            <p className="px-4 py-2 text-gray-400 text-sm">No se encontraron productos con stock</p>
                                         ) : (
-                                            productosFiltrados.map(p => (
-                                                <div
-                                                    key={p.id}
-                                                    className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm flex justify-between items-center"
-                                                    onMouseDown={(e) => e.preventDefault()}
-                                                    onClick={() => handleSeleccionarProducto(p)}
-                                                >
-                                                    <span>{p.codigo} - {p.nombre}</span>
-                                                    <span className="text-gray-500 ml-4">${p.precio}</span>
-                                                </div>
-                                            ))
+                                            productosFiltrados.map(p => {
+                                                const stock = inventario.find(i => i.productos_id === p.id)
+                                                return (
+                                                    <div
+                                                        key={p.id}
+                                                        className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm flex justify-between items-center"
+                                                        onMouseDown={(e) => e.preventDefault()}
+                                                        onClick={() => handleSeleccionarProducto(p)}
+                                                    >
+                                                        <span>{p.codigo} - {p.nombre}</span>
+                                                        <div className="flex gap-3 ml-4">
+                                                            <span className="text-gray-500">
+                                                                {formatMoneda(p.precio, moneda, simbolo)}
+                                                            </span>
+                                                            <span className={`font-medium ${(stock?.cantidad ?? 0) <= 5 ? 'text-red-500' : 'text-green-600'}`}>
+                                                                Stock: {stock?.cantidad ?? 0}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                )
+                                            })
                                         )}
                                     </div>
                                 )}
@@ -266,14 +298,13 @@ export default function Ventas() {
                         </div>
                     </div>
 
-                    {/* Carrito */}
                     {carrito.length > 0 && (
                         <div>
                             <label className="text-sm font-medium text-gray-700 mb-2 block">Productos en la venta</label>
                             <table className="w-full text-sm mb-2">
                                 <thead className="bg-gray-50 text-gray-500 uppercase text-xs">
                                 <tr>
-                                    <th className="px-4 py-2 text-left">Codigo</th>
+                                    <th className="px-4 py-2 text-left">Código</th>
                                     <th className="px-4 py-2 text-left">Producto</th>
                                     <th className="px-4 py-2 text-left">Cantidad</th>
                                     <th className="px-4 py-2 text-left">Precio</th>
@@ -287,8 +318,8 @@ export default function Ventas() {
                                         <td className="px-4 py-2">{item.codigo}</td>
                                         <td className="px-4 py-2">{item.nombre}</td>
                                         <td className="px-4 py-2">{item.cantidad}</td>
-                                        <td className="px-4 py-2">${item.precio}</td>
-                                        <td className="px-4 py-2 font-medium">${(item.precio * item.cantidad).toFixed(2)}</td>
+                                        <td className="px-4 py-2">{formatMoneda(item.precio, moneda, simbolo)}</td>
+                                        <td className="px-4 py-2 font-medium">{formatMoneda(item.precio * item.cantidad, moneda, simbolo)}</td>
                                         <td className="px-4 py-2">
                                             <button
                                                 className="text-red-500 hover:underline text-xs"
@@ -301,11 +332,12 @@ export default function Ventas() {
                                 ))}
                                 </tbody>
                             </table>
-                            <p className="text-right font-bold text-gray-800 text-lg">Total: ${total.toFixed(2)}</p>
+                            <p className="text-right font-bold text-gray-800 text-lg">
+                                Total: {formatMoneda(total, moneda, simbolo)}
+                            </p>
                         </div>
                     )}
 
-                    {/* Método de pago */}
                     <div>
                         <label className="text-sm font-medium text-gray-700 mb-1 block">Método de pago</label>
                         <select
@@ -339,7 +371,6 @@ export default function Ventas() {
                 </div>
             )}
 
-            {/* Historial */}
             <div className="bg-white rounded-lg shadow-sm overflow-hidden">
                 {loading ? (
                     <p className="p-6 text-gray-500">Cargando ventas...</p>
@@ -360,6 +391,9 @@ export default function Ventas() {
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                         {ventas.map(venta => {
+                            const sucVenta = sucursales?.find(s => s.id === venta.sucursales_id)
+                            const monedaVenta = sucVenta?.moneda ?? 'USD'
+                            const simboloVenta = sucVenta?.simbolo ?? '$'
                             const totalVenta = venta.ventas_detalle?.reduce(
                                 (acc, d) => acc + d.productos?.precio * d.cantidad, 0
                             )
@@ -369,12 +403,15 @@ export default function Ventas() {
                                     <td className="px-6 py-4 text-gray-600">{venta.sucursales?.nombre ?? '—'}</td>
                                     <td className="px-6 py-4 text-gray-600">{venta.empleados?.nombre ?? '—'}</td>
                                     <td className="px-6 py-4 text-gray-600">{venta.tipo_pago?.nombre ?? '—'}</td>
-                                    <td className="px-6 py-4 font-medium text-gray-800">${totalVenta?.toFixed(2) ?? '0.00'}</td>
+                                    <td className="px-6 py-4 font-medium text-gray-800">
+                                        {formatMoneda(totalVenta, monedaVenta, simboloVenta)}
+                                    </td>
                                     <td className="px-6 py-4 text-gray-600">
                                         {new Date(venta.created_at).toLocaleDateString()}
                                     </td>
                                     <td className="px-6 py-4">
-                                        <button className="text-red-500 hover:underline text-xs"
+                                        <button
+                                            className="text-red-500 hover:underline text-xs"
                                             onClick={() => eliminarVenta(venta)}
                                         >
                                             Eliminar
