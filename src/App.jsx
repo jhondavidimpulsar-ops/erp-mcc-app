@@ -10,6 +10,9 @@ import Empleados from './pages/erp/Empleados'
 import Ordenes from './pages/erp/Ordenes'
 import Provedores from "./pages/erp/Provedores.jsx";
 import Reportes from './pages/erp/Reportes'
+import Contabilidad from './pages/erp/Contabilidad'
+import CXC from './pages/erp/CXC'
+import Sucursales from './pages/erp/Sucursales'
 
 
 function ProtectedRoute({ children }) {
@@ -31,7 +34,10 @@ function AppRoutes() {
             <Route path="/empleados" element={<ProtectedRoute><Empleados /></ProtectedRoute>} />
             <Route path="/ordenes" element={<ProtectedRoute><Ordenes /></ProtectedRoute>} />
             <Route path="/provedores" element={<ProtectedRoute><Provedores /></ProtectedRoute>} />
+            <Route path="/sucursales" element={<ProtectedRoute><Sucursales /></ProtectedRoute>} />
             <Route path="/reportes" element={<ProtectedRoute><Reportes /></ProtectedRoute>} />
+            <Route path="/contabilidad" element={<ProtectedRoute><Contabilidad /></ProtectedRoute>} />
+            <Route path="/cxc" element={<ProtectedRoute><CXC /></ProtectedRoute>} />
             <Route path="*" element={<Navigate to="/login" />} />
         </Routes>
     )

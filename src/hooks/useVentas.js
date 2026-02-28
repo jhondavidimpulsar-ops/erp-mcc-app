@@ -19,10 +19,10 @@ export function useVentas() {
         empleados(nombre),
         tipo_pago(nombre),
         ventas_detalle(
-        id,
-        cantidad,
-        productos_id,
-        productos(nombre, precio)
+          id,
+          cantidad,
+          productos_id,
+          productos(nombre, precio, costo)
         )
       `)
             .order('created_at', { ascending: false })
@@ -60,9 +60,33 @@ export function useVentas() {
             })
         }
 
+        const total = detalle.reduce((acc, item) => acc + item.precio * item.cantidad, 0)
+        const costo = detalle.reduce((acc, item) => acc + (item.costo || 0) * item.cantidad, 0)
+
+        await supabase.rpc('registrar_asiento_venta', {
+            p_venta_id: data.id,
+            p_total: total,
+            p_costo: costo,
+        })
+
+        const { data: tipoPago } = await supabase
+            .from('tipo_pago')
+            .select('nombre')
+            .eq('id', venta.tipo_pago_id)
+            .single()
+
+        if (tipoPago?.nombre === 'credito') {
+            await supabase.rpc('registrar_cxc', {
+                p_venta_id: data.id,
+                p_cliente_id: venta.clientes_id,
+                p_monto: total,
+            })
+        }
+
         fetchVentas()
         return { error: null }
     }
+
     async function eliminarVenta(venta) {
         for (const detalle of venta.ventas_detalle) {
             await supabase.rpc('restaurar_inventario', {

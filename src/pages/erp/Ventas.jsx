@@ -61,6 +61,7 @@ export default function Ventas() {
                 nombre: producto.nombre,
                 codigo: producto.codigo,
                 precio: producto.precio,
+                costo: producto.costo,  // ← agregar esta línea
                 cantidad: Number(cantidad),
             }])
         }
