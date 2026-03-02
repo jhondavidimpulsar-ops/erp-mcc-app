@@ -1,9 +1,12 @@
 import { useState } from 'react'
 import Layout from '../../components/Layout'
 import { useCXC } from '../../hooks/useCXC'
+import { useSucursales } from '../../hooks/useSucursales'
+import { formatMoneda } from '../../utils/formatMoneda'
 
 export default function CXC() {
     const { cxcs, tiposPago, loading, registrarAbono } = useCXC()
+    const { sucursales } = useSucursales()
     const [abonoForm, setAbonoForm] = useState(null)
     const [monto, setMonto] = useState('')
     const [tipoPagoId, setTipoPagoId] = useState('')
@@ -18,7 +21,7 @@ export default function CXC() {
         const saldo = cxc.monto_total - cxc.monto_pagado
 
         if (Number(monto) > saldo) {
-            return setError(`El abono no puede ser mayor al saldo pendiente ($${saldo.toFixed(2)})`)
+            return setError(`El abono no puede ser mayor al saldo pendiente (${formatMoneda(saldo, monedaActual, simboloActual)})`)
         }
 
         const { error } = await registrarAbono(abonoForm, monto, tipoPagoId)
@@ -33,9 +36,25 @@ export default function CXC() {
         filtro === 'todas' ? true : c.estado === filtro
     )
 
-    const totalPendiente = cxcs
-        .filter(c => c.estado === 'pendiente')
-        .reduce((acc, c) => acc + (c.monto_total - c.monto_pagado), 0)
+    // Totales pendientes por moneda
+    const totalesPendientes = (() => {
+        const totales = {}
+        cxcs.filter(c => c.estado === 'pendiente').forEach(cxc => {
+            const suc = sucursales?.find(s => s.id === cxc.ventas?.sucursales_id)
+            const moneda = suc?.moneda ?? 'USD'
+            const simbolo = suc?.simbolo ?? '$'
+            const saldo = cxc.monto_total - cxc.monto_pagado
+            if (!totales[moneda]) totales[moneda] = { moneda, simbolo, total: 0 }
+            totales[moneda].total += saldo
+        })
+        return Object.values(totales)
+    })()
+
+    // Para el mensaje de error del abono necesitamos la moneda activa
+    const cxcActiva = cxcs.find(c => c.id === abonoForm)
+    const sucActiva = sucursales?.find(s => s.id === cxcActiva?.ventas?.sucursales_id)
+    const monedaActual = sucActiva?.moneda ?? 'USD'
+    const simboloActual = sucActiva?.simbolo ?? '$'
 
     return (
         <Layout>
@@ -47,9 +66,15 @@ export default function CXC() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
                 <div className="bg-white rounded-lg shadow-sm p-6">
                     <h3 className="text-gray-500 text-sm">Total pendiente</h3>
-                    <p className="text-3xl font-bold text-red-600 mt-2">
-                        ${totalPendiente.toFixed(2)}
-                    </p>
+                    {totalesPendientes.length === 0 ? (
+                        <p className="text-3xl font-bold text-gray-800 mt-2">$0.00</p>
+                    ) : (
+                        totalesPendientes.map(t => (
+                            <p key={t.moneda} className="text-2xl font-bold text-red-600 mt-1">
+                                {formatMoneda(t.total, t.moneda, t.simbolo)}
+                            </p>
+                        ))
+                    )}
                 </div>
                 <div className="bg-white rounded-lg shadow-sm p-6">
                     <h3 className="text-gray-500 text-sm">CXC pendientes</h3>
@@ -94,7 +119,11 @@ export default function CXC() {
                     <p className="text-gray-500">No hay cuentas por cobrar.</p>
                 ) : (
                     cxcsFiltradas.map(cxc => {
+                        const sucCxc = sucursales?.find(s => s.id === cxc.ventas?.sucursales_id)
+                        const moneda = sucCxc?.moneda ?? 'USD'
+                        const simbolo = sucCxc?.simbolo ?? '$'
                         const saldo = cxc.monto_total - cxc.monto_pagado
+
                         return (
                             <div key={cxc.id} className="bg-white rounded-lg shadow-sm p-6">
                                 <div className="flex justify-between items-start mb-4">
@@ -118,15 +147,21 @@ export default function CXC() {
                                 <div className="grid grid-cols-3 gap-4 mb-4">
                                     <div>
                                         <p className="text-gray-500 text-xs">Total</p>
-                                        <p className="font-bold text-gray-800">${cxc.monto_total.toFixed(2)}</p>
+                                        <p className="font-bold text-gray-800">
+                                            {formatMoneda(cxc.monto_total, moneda, simbolo)}
+                                        </p>
                                     </div>
                                     <div>
                                         <p className="text-gray-500 text-xs">Pagado</p>
-                                        <p className="font-bold text-green-600">${cxc.monto_pagado.toFixed(2)}</p>
+                                        <p className="font-bold text-green-600">
+                                            {formatMoneda(cxc.monto_pagado, moneda, simbolo)}
+                                        </p>
                                     </div>
                                     <div>
                                         <p className="text-gray-500 text-xs">Saldo</p>
-                                        <p className="font-bold text-red-600">${saldo.toFixed(2)}</p>
+                                        <p className="font-bold text-red-600">
+                                            {formatMoneda(saldo, moneda, simbolo)}
+                                        </p>
                                     </div>
                                 </div>
 
@@ -140,7 +175,9 @@ export default function CXC() {
                           <span className="text-gray-600">
                             {new Date(abono.created_at).toLocaleDateString()} · {abono.tipo_pago?.nombre}
                           </span>
-                                                    <span className="font-medium text-green-600">${Number(abono.monto).toFixed(2)}</span>
+                                                    <span className="font-medium text-green-600">
+                            {formatMoneda(Number(abono.monto), moneda, simbolo)}
+                          </span>
                                                 </div>
                                             ))}
                                         </div>

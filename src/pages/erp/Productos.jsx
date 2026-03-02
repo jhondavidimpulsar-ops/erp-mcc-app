@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import Layout from '../../components/Layout'
 import { useProductos } from '../../hooks/useProductos'
+import { formatMoneda } from '../../utils/formatMoneda'
 
 const productoVacio = {
     nombre: '',
@@ -176,8 +177,9 @@ export default function Productos() {
                                 <td className="px-6 py-4 text-gray-600">{producto.codigo}</td>
                                 <td className="px-6 py-4 font-medium text-gray-800">{producto.nombre}</td>
                                 <td className="px-6 py-4 text-gray-600">{producto.categorias?.nombre ?? '—'}</td>
-                                <td className="px-6 py-4 text-gray-600">${producto.costo}</td>
-                                <td className="px-6 py-4 text-gray-600">${producto.precio}</td>
+                                <td className="px-6 py-4 text-gray-600">{formatMoneda(producto.costo, 'USD', '$')}</td>
+                                <td className="px-6 py-4 text-gray-600">{formatMoneda(producto.precio, 'USD', '$')}</td>
+
                                 <td className="px-6 py-4 flex gap-2">
                                     <button
                                         className="text-blue-600 hover:underline text-xs"

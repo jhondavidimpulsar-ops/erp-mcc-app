@@ -4,11 +4,13 @@ import { supabase } from '../supabaseClient'
 export function useOrdenes() {
     const [ordenes, setOrdenes] = useState([])
     const [proveedores, setProveedores] = useState([])
+    const [sucursales, setSucursales] = useState([])
     const [loading, setLoading] = useState(true)
 
     useEffect(() => {
         fetchOrdenes()
         fetchProveedores()
+        fetchSucursales()
     }, [])
 
     async function fetchOrdenes() {
@@ -35,6 +37,11 @@ export function useOrdenes() {
     async function fetchProveedores() {
         const { data } = await supabase.from('provedores').select('*')
         if (data) setProveedores(data)
+    }
+
+    async function fetchSucursales() {
+        const { data } = await supabase.from('sucursales').select('id, nombre, moneda, simbolo')
+        if (data) setSucursales(data)
     }
 
     async function crearOrden(orden, detalle) {
@@ -94,5 +101,5 @@ export function useOrdenes() {
         fetchOrdenes()
     }
 
-    return { ordenes, proveedores, loading, crearOrden, recibirOrden, eliminarOrden }
+    return { ordenes, proveedores, sucursales, loading, crearOrden, recibirOrden, eliminarOrden }
 }

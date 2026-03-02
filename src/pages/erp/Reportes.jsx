@@ -1,6 +1,10 @@
 import Layout from '../../components/Layout'
 import { useReportes } from '../../hooks/useReportes'
-import {BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line} from 'recharts'
+import { formatMoneda } from '../../utils/formatMoneda'
+import {
+    BarChart, Bar, XAxis, YAxis, CartesianGrid,
+    Tooltip, ResponsiveContainer, LineChart, Line
+} from 'recharts'
 
 export default function Reportes() {
     const {
@@ -13,8 +17,19 @@ export default function Reportes() {
         setFiltros,
     } = useReportes()
 
-    const totalPeriodo = ventasDiarias.reduce((acc, d) => acc + Number(d.total_monto), 0)
     const totalVentas = ventasDiarias.reduce((acc, d) => acc + Number(d.total_ventas), 0)
+
+    const totalesReporte = (() => {
+        const totales = {}
+        ventasDiarias.forEach(d => {
+            const suc = sucursales?.find(s => s.nombre === d.sucursal)
+            const moneda = suc?.moneda ?? 'USD'
+            const simbolo = suc?.simbolo ?? '$'
+            if (!totales[moneda]) totales[moneda] = { moneda, simbolo, total: 0 }
+            totales[moneda].total += Number(d.total_monto)
+        })
+        return Object.values(totales)
+    })()
 
     const datosGrafico = ventasDiarias.map(d => ({
         fecha: new Date(d.fecha).toLocaleDateString('es', { month: 'short', day: 'numeric' }),
@@ -28,6 +43,7 @@ export default function Reportes() {
                 <h2 className="text-2xl font-bold text-gray-800">Reportes</h2>
             </div>
 
+            {/* Filtros */}
             <div className="bg-white rounded-lg shadow-sm p-4 mb-6 flex flex-wrap gap-4 items-end">
                 <div>
                     <label className="text-sm font-medium text-gray-700 mb-1 block">Desde</label>
@@ -62,12 +78,21 @@ export default function Reportes() {
                 </div>
             </div>
 
+            {/* Tarjetas resumen */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
                 <div className="bg-white rounded-lg shadow-sm p-6">
                     <h3 className="text-gray-500 text-sm">Total vendido</h3>
-                    <p className="text-3xl font-bold text-green-600 mt-2">
-                        {loading ? '...' : `$${totalPeriodo.toFixed(2)}`}
-                    </p>
+                    {loading ? (
+                        <p className="text-gray-400 mt-2">...</p>
+                    ) : totalesReporte.length === 0 ? (
+                        <p className="text-3xl font-bold text-gray-800 mt-2">$0.00</p>
+                    ) : (
+                        totalesReporte.map(t => (
+                            <p key={t.moneda} className="text-2xl font-bold text-green-600 mt-1">
+                                {formatMoneda(t.total, t.moneda, t.simbolo)}
+                            </p>
+                        ))
+                    )}
                 </div>
                 <div className="bg-white rounded-lg shadow-sm p-6">
                     <h3 className="text-gray-500 text-sm">Número de ventas</h3>
@@ -83,57 +108,106 @@ export default function Reportes() {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                <div className="bg-white rounded-lg shadow-sm p-6">
-                    <h3 className="font-bold text-gray-800 mb-4">Ventas por día</h3>
-                    {loading ? (
-                        <p className="text-gray-500">Cargando...</p>
-                    ) : datosGrafico.length === 0 ? (
-                        <p className="text-gray-500">No hay ventas en este período.</p>
-                    ) : (
-                        <ResponsiveContainer width="100%" height={250}>
-                            <LineChart data={datosGrafico}>
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis dataKey="fecha" tick={{ fontSize: 12 }} />
-                                <YAxis tick={{ fontSize: 12 }} />
-                                <Tooltip formatter={(value) => `$${value.toFixed(2)}`} />
-                                <Line
-                                    type="monotone"
-                                    dataKey="monto"
-                                    stroke="#2563eb"
-                                    strokeWidth={2}
-                                    dot={{ r: 4 }}
-                                    name="Monto"
-                                />
-                            </LineChart>
-                        </ResponsiveContainer>
-                    )}
-                </div>
+            {/* Gráficos */}
+            {/* 1. Ventas por día */}
+            <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+                <h3 className="font-bold text-gray-800 mb-4">Ventas por día</h3>
+                {loading ? (
+                    <p className="text-gray-500">Cargando...</p>
+                ) : datosGrafico.length === 0 ? (
+                    <p className="text-gray-500">No hay ventas en este período.</p>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {(() => {
+                            const datosUSD = ventasDiarias
+                                .filter(d => (sucursales?.find(s => s.nombre === d.sucursal)?.moneda ?? 'USD') === 'USD')
+                                .sort((a, b) => new Date(a.fecha) - new Date(b.fecha))
+                                .map(d => ({
+                                    fecha: new Date(d.fecha).toLocaleDateString('es', { month: 'short', day: 'numeric' }),
+                                    monto: Number(d.total_monto),
+                                }))
 
-                <div className="bg-white rounded-lg shadow-sm p-6">
-                    <h3 className="font-bold text-gray-800 mb-4">Productos más vendidos</h3>
-                    {loading ? (
-                        <p className="text-gray-500">Cargando...</p>
-                    ) : productosVendidos.length === 0 ? (
-                        <p className="text-gray-500">No hay datos aún.</p>
-                    ) : (
-                        <ResponsiveContainer width="100%" height={250}>
-                            <BarChart data={productosVendidos.slice(0, 5)}>
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis dataKey="producto" tick={{ fontSize: 11 }} />
-                                <YAxis tick={{ fontSize: 12 }} />
-                                <Tooltip />
-                                <Bar dataKey="total_vendido" fill="#2563eb" name="Unidades" />
-                            </BarChart>
-                        </ResponsiveContainer>
-                    )}
-                </div>
+                            return datosUSD.length === 0 ? null : (
+                                <div>
+                                    <p className="text-sm font-medium text-gray-500 mb-2">Dólares (USD)</p>
+                                    <ResponsiveContainer width="100%" height={200}>
+                                        <LineChart data={datosUSD}>
+                                            <CartesianGrid strokeDasharray="3 3" />
+                                            <XAxis dataKey="fecha" tick={{ fontSize: 11 }} />
+                                            <YAxis tick={{ fontSize: 11 }} />
+                                            <Tooltip formatter={(value) => formatMoneda(value, 'USD', '$')} />
+                                            <Line type="monotone" dataKey="monto" stroke="#2563eb" strokeWidth={2} dot={{ r: 3 }} name="Monto" />
+                                        </LineChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            )
+                        })()}
+
+                        {(() => {
+                            const datosCOP = ventasDiarias
+                                .filter(d => sucursales?.find(s => s.nombre === d.sucursal)?.moneda === 'COP')
+                                .sort((a, b) => new Date(a.fecha) - new Date(b.fecha))
+                                .map(d => ({
+                                    fecha: new Date(d.fecha).toLocaleDateString('es', { month: 'short', day: 'numeric' }),
+                                    monto: Number(d.total_monto),
+                                }))
+
+                            return datosCOP.length === 0 ? null : (
+                                <div>
+                                    <p className="text-sm font-medium text-gray-500 mb-2">Pesos colombianos (COP)</p>
+                                    <ResponsiveContainer width="100%" height={200}>
+                                        <LineChart data={datosCOP}>
+                                            <CartesianGrid strokeDasharray="3 3" />
+                                            <XAxis dataKey="fecha" tick={{ fontSize: 11 }} />
+                                            <YAxis tick={{ fontSize: 11 }} />
+                                            <Tooltip formatter={(value) => formatMoneda(value, 'COP', 'COP$')} />
+                                            <Line type="monotone" dataKey="monto" stroke="#16a34a" strokeWidth={2} dot={{ r: 3 }} name="Monto" />
+                                        </LineChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            )
+                        })()}
+                    </div>
+                )}
             </div>
 
-            {/* Inventario bajo */}
+            {/* 2. Productos más vendidos */}
+            <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+                <h3 className="font-bold text-gray-800 mb-4">Productos más vendidos</h3>
+                {loading ? (
+                    <p className="text-gray-500">Cargando...</p>
+                ) : productosVendidos.length === 0 ? (
+                    <p className="text-gray-500">No hay datos aún.</p>
+                ) : (
+                    <ResponsiveContainer width="100%" height={250}>
+                        <BarChart data={productosVendidos.slice(0, 10)}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis
+                                dataKey="producto"
+                                tick={{ fontSize: 11 }}
+                                tickFormatter={(value, index) => {
+                                    const item = productosVendidos[index]
+                                    return item?.codigo ? `${item.codigo}` : value
+                                }}
+                            />
+                            <YAxis tick={{ fontSize: 12 }} />
+                            <Tooltip
+                                formatter={(value) => [value, 'Unidades']}
+                                labelFormatter={(label, payload) => {
+                                    const item = payload?.[0]?.payload
+                                    return item ? `${item.codigo} - ${item.producto}` : label
+                                }}
+                            />
+                            <Bar dataKey="total_vendido" fill="#2563eb" name="Unidades" />
+                        </BarChart>
+                    </ResponsiveContainer>
+                )}
+            </div>
+
+            {/* 3. Inventario bajo */}
             <div className="bg-white rounded-lg shadow-sm overflow-hidden">
                 <div className="px-6 py-4 border-b border-gray-100">
-                    <h3 className="font-bold text-gray-800">Inventario bajo</h3>
+                    <h3 className="font-bold text-gray-800">Productos con stock bajo</h3>
                     <p className="text-gray-400 text-xs mt-1">Productos con 50 o menos unidades</p>
                 </div>
                 {loading ? (
@@ -155,9 +229,9 @@ export default function Reportes() {
                                 <td className="px-6 py-4 font-medium text-gray-800">{item.producto}</td>
                                 <td className="px-6 py-4 text-gray-600">{item.sucursal}</td>
                                 <td className="px-6 py-4">
-                    <span className={`font-bold ${item.cantidad === 0 ? 'text-red-600' : 'text-yellow-600'}`}>
-                      {item.cantidad}
-                    </span>
+                                    <span className={`font-bold ${item.cantidad === 0 ? 'text-red-600' : 'text-yellow-600'}`}>
+                                      {item.cantidad}
+                                    </span>
                                 </td>
                             </tr>
                         ))}

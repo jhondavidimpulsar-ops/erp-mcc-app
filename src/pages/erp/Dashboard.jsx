@@ -1,20 +1,33 @@
 import { useAuth } from '../../context/AuthContext'
 import { useDashboard } from '../../hooks/useDashboard'
 import { useEmpleado } from '../../hooks/useEmpleado'
+import { formatMoneda } from '../../utils/formatMoneda'
 import Layout from '../../components/Layout'
 
 export default function Dashboard() {
     const { user } = useAuth()
-    const { stats, ventasRecientes, loading } = useDashboard()
+    const { stats, ventasRecientes, sucursales, sucursalFiltro, setSucursalFiltro, loading } = useDashboard()
     const { empleado } = useEmpleado()
 
     return (
         <Layout>
-            <div className="mb-6">
-                <h2 className="text-2xl font-bold text-gray-800">Dashboard</h2>
-                <p className="text-gray-500 text-sm mt-1">
-                    Bienvenido, {empleado?.nombre ?? user?.email}
-                </p>
+            <div className="mb-6 flex justify-between items-center">
+                <div>
+                    <h2 className="text-2xl font-bold text-gray-800">Dashboard</h2>
+                    <p className="text-gray-500 text-sm mt-1">
+                        Bienvenido, {empleado?.nombre ?? user?.email}
+                    </p>
+                </div>
+                <select
+                    className="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    value={sucursalFiltro}
+                    onChange={(e) => setSucursalFiltro(e.target.value)}
+                >
+                    <option value="">Todas las sucursales</option>
+                    {sucursales.map(s => (
+                        <option key={s.id} value={s.id}>{s.nombre}</option>
+                    ))}
+                </select>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
@@ -32,9 +45,17 @@ export default function Dashboard() {
                 </div>
                 <div className="bg-white rounded-lg shadow-sm p-6">
                     <h3 className="text-gray-500 text-sm">Total vendido hoy</h3>
-                    <p className="text-3xl font-bold text-green-600 mt-2">
-                        {loading ? '...' : `$${stats.totalHoy.toFixed(2)}`}
-                    </p>
+                    {loading ? (
+                        <p className="text-gray-400 mt-2">...</p>
+                    ) : stats.totalesHoy.length === 0 ? (
+                        <p className="text-3xl font-bold text-gray-800 mt-2">$0.00</p>
+                    ) : (
+                        stats.totalesHoy.map(t => (
+                            <p key={t.moneda} className="text-2xl font-bold text-green-600 mt-1">
+                                {formatMoneda(t.total, t.moneda, t.simbolo)}
+                            </p>
+                        ))
+                    )}
                 </div>
                 <div className="bg-white rounded-lg shadow-sm p-6">
                     <h3 className="text-gray-500 text-sm">Clientes</h3>
@@ -65,6 +86,9 @@ export default function Dashboard() {
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                         {ventasRecientes.map(venta => {
+                            const sucVenta = sucursales?.find(s => s.id === venta.sucursales_id)
+                            const monedaVenta = sucVenta?.moneda ?? 'USD'
+                            const simboloVenta = sucVenta?.simbolo ?? '$'
                             const total = venta.ventas_detalle?.reduce(
                                 (acc, d) => acc + d.productos?.precio * d.cantidad, 0
                             )
@@ -73,7 +97,9 @@ export default function Dashboard() {
                                     <td className="px-6 py-4 text-gray-800">{venta.clientes?.nombre ?? '—'}</td>
                                     <td className="px-6 py-4 text-gray-600">{venta.sucursales?.nombre ?? '—'}</td>
                                     <td className="px-6 py-4 text-gray-600">{venta.tipo_pago?.nombre ?? '—'}</td>
-                                    <td className="px-6 py-4 font-medium text-gray-800">${total?.toFixed(2) ?? '0.00'}</td>
+                                    <td className="px-6 py-4 font-medium text-gray-800">
+                                        {formatMoneda(total, monedaVenta, simboloVenta)}
+                                    </td>
                                     <td className="px-6 py-4 text-gray-600">
                                         {new Date(venta.created_at).toLocaleDateString()}
                                     </td>

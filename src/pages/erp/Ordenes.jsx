@@ -3,10 +3,11 @@ import Layout from '../../components/Layout'
 import { useOrdenes } from '../../hooks/useOrdenes'
 import { useProductos } from '../../hooks/useProductos'
 import { useEmpleado } from '../../hooks/useEmpleado'
+import { formatMoneda } from '../../utils/formatMoneda'
 
 export default function Ordenes() {
-    const { ordenes, proveedores, loading, crearOrden, recibirOrden, eliminarOrden } = useOrdenes()
-    const { productos, sucursales } = useProductos()
+    const { ordenes, proveedores, sucursales, loading, crearOrden, recibirOrden, eliminarOrden } = useOrdenes()
+    const { productos} = useProductos()
     const { empleado } = useEmpleado()
 
     const [mostrarForm, setMostrarForm] = useState(false)
@@ -21,6 +22,10 @@ export default function Ordenes() {
     const [costo, setCosto] = useState('')
     const [error, setError] = useState(null)
     const [exito, setExito] = useState(false)
+
+    const sucursalActual = sucursales?.find(s => s.id === sucursalId)
+    const moneda = sucursalActual?.moneda ?? 'USD'
+    const simbolo = sucursalActual?.simbolo ?? '$'
 
     const handleSeleccionarProducto = (producto) => {
         setProductoSeleccionado(producto.id)
@@ -197,7 +202,7 @@ export default function Ordenes() {
                                                     onClick={() => handleSeleccionarProducto(p)}
                                                 >
                                                     <span>{p.codigo} - {p.nombre}</span>
-                                                    <span className="text-gray-500 ml-4">Costo: ${p.costo}</span>
+                                                    <span className="text-gray-500 ml-4">Costo: {formatMoneda(p.costo, moneda, simbolo)}</span>
                                                 </div>
                                             ))
                                         )}
@@ -250,8 +255,8 @@ export default function Ordenes() {
                                         <td className="px-4 py-2">{item.codigo}</td>
                                         <td className="px-4 py-2">{item.nombre}</td>
                                         <td className="px-4 py-2">{item.cantidad}</td>
-                                        <td className="px-4 py-2">${item.costo}</td>
-                                        <td className="px-4 py-2 font-medium">${(item.costo * item.cantidad).toFixed(2)}</td>
+                                        <td className="px-4 py-2">{formatMoneda(item.costo, moneda, simbolo)}</td>
+                                        <td className="px-4 py-2 font-medium">{formatMoneda(item.costo * item.cantidad, moneda, simbolo)}</td>
                                         <td className="px-4 py-2">
                                             <button
                                                 className="text-red-500 hover:underline text-xs"
@@ -264,7 +269,7 @@ export default function Ordenes() {
                                 ))}
                                 </tbody>
                             </table>
-                            <p className="text-right font-bold text-gray-800 text-lg">Total: ${totalOrden.toFixed(2)}</p>
+                            <p className="text-right font-bold text-gray-800 text-lg">Total: {formatMoneda(totalOrden, moneda, simbolo)}</p>
                         </div>
                     )}
 
@@ -318,6 +323,9 @@ export default function Ordenes() {
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                         {ordenes.map(orden => {
+                            const sucOrden = sucursales?.find(s => s.id === orden.sucursales_id)
+                            const monedaOrden = sucOrden?.moneda ?? 'USD'
+                            const simboloOrden = sucOrden?.simbolo ?? '$'
                             const total = orden.orden_de_compras_detalle?.reduce(
                                 (acc, d) => acc + d.costo * d.cantidad, 0
                             )
@@ -328,7 +336,7 @@ export default function Ordenes() {
                                     <td className="px-6 py-4 text-gray-600">
                                         {orden.orden_de_compras_detalle?.map(d => d.productos?.nombre).join(', ')}
                                     </td>
-                                    <td className="px-6 py-4 font-medium text-gray-800">${total?.toFixed(2) ?? '0.00'}</td>
+                                    <td>{formatMoneda(total, monedaOrden, simboloOrden)}</td>
                                     <td className="px-6 py-4">
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                           orden.estado === 'recibida'

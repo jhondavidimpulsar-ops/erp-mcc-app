@@ -24,7 +24,7 @@ export function useReportes() {
     }, [filtros])
 
     async function fetchSucursales() {
-        const { data } = await supabase.from('sucursales').select('*')
+        const { data } = await supabase.from('sucursales').select('id, nombre, moneda, simbolo')
         if (data) setSucursales(data)
     }
 

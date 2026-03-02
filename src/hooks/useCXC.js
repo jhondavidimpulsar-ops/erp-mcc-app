@@ -17,7 +17,7 @@ export function useCXC() {
             .select(`
         *,
         clientes(nombre, cedula),
-        ventas(created_at, sucursales(nombre)),
+        ventas(created_at, sucursales_id, sucursales(nombre)),
         cxc_abonos(
           id,
           monto,
