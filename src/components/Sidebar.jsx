@@ -17,6 +17,7 @@ export default function Sidebar() {
         { to: '/ventas', label: 'Ventas' },
         { to: '/inventario', label: 'Inventario' },
         { to: '/productos', label: 'Productos' },
+        { to: '/pedidos', label: 'Pedidos Online' },
         { to: '/ordenes', label: 'Órdenes de Compra' },
         { to: '/clientes', label: 'Clientes' },
         { to: '/cxc', label: 'Cuentas por Cobrar' },

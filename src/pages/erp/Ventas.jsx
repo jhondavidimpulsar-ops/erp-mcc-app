@@ -386,6 +386,7 @@ export default function Ventas() {
                             <th className="px-6 py-3 text-left">Pago</th>
                             <th className="px-6 py-3 text-left">Total</th>
                             <th className="px-6 py-3 text-left">Fecha</th>
+                            <th className="px-6 py-3 text-left">Origen</th>
                             <th className="px-6 py-3 text-left">Acciones</th>
                         </tr>
                         </thead>
@@ -403,6 +404,17 @@ export default function Ventas() {
                                     <td className="px-6 py-4 text-gray-600">{venta.sucursales?.nombre ?? '—'}</td>
                                     <td className="px-6 py-4 text-gray-600">{venta.empleados?.nombre ?? '—'}</td>
                                     <td className="px-6 py-4 text-gray-600">{venta.tipo_pago?.nombre ?? '—'}</td>
+                                    <td className="px-6 py-4">
+                                        {venta.origen === 'ecommerce' ? (
+                                            <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded-full text-xs font-medium">
+                                                 🛒 Online
+                                            </span>
+                                        ) : (
+                                            <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded-full text-xs font-medium">
+                                              ERP
+                                            </span>
+                                        )}
+                                    </td>
                                     <td className="px-6 py-4 font-medium text-gray-800">
                                         {formatMoneda(totalVenta, monedaVenta, simboloVenta)}
                                     </td>

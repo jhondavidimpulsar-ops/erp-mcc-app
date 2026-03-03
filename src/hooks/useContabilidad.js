@@ -4,21 +4,29 @@ import { supabase } from '../supabaseClient'
 export function useContabilidad() {
     const [asientos, setAsientos] = useState([])
     const [cuentas, setCuentas] = useState([])
+    const [sucursales, setSucursales] = useState([])
     const [loading, setLoading] = useState(true)
 
     const [filtros, setFiltros] = useState({
         fechaInicio: new Date(new Date().setDate(new Date().getDate() - 30))
             .toISOString().split('T')[0],
         fechaFin: new Date().toISOString().split('T')[0],
+        sucursalId: '',
     })
 
     useEffect(() => {
         fetchCuentas()
+        fetchSucursales()
     }, [])
 
     useEffect(() => {
         fetchAsientos()
     }, [filtros])
+
+    async function fetchSucursales() {
+        const { data } = await supabase.from('sucursales').select('id, nombre, moneda, simbolo')
+        if (data) setSucursales(data)
+    }
 
     async function fetchCuentas() {
         const { data } = await supabase
@@ -30,10 +38,12 @@ export function useContabilidad() {
 
     async function fetchAsientos() {
         setLoading(true)
-        const { data, error } = await supabase
+
+        let query = supabase
             .from('asientos')
             .select(`
         *,
+        sucursales(id, nombre, moneda, simbolo),
         asientos_detalle(
           debe,
           haber,
@@ -44,6 +54,11 @@ export function useContabilidad() {
             .lte('created_at', filtros.fechaFin + 'T23:59:59')
             .order('created_at', { ascending: false })
 
+        if (filtros.sucursalId) {
+            query = query.eq('sucursales_id', filtros.sucursalId)
+        }
+
+        const { data, error } = await query
         if (!error) setAsientos(data)
         setLoading(false)
     }
@@ -94,10 +109,10 @@ export function useContabilidad() {
             })),
     }
 
-    async function registrarAsientoManual(concepto, movimientos) {
+    async function registrarAsientoManual(concepto, movimientos, sucursalId) {
         const { data, error } = await supabase
             .from('asientos')
-            .insert({ concepto, referencia_tipo: 'manual' })
+            .insert({ concepto, referencia_tipo: 'manual', sucursales_id: sucursalId || null })
             .select()
             .single()
 
@@ -121,6 +136,7 @@ export function useContabilidad() {
     return {
         asientos,
         cuentas,
+        sucursales,
         balanceGeneral,
         estadoResultados,
         loading,

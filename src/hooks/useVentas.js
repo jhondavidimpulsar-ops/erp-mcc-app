@@ -29,18 +29,16 @@ export function useVentas() {
         const { data, error } = await supabase
             .from('ventas')
             .select(`
-        *,
-        clientes(nombre),
-        sucursales(nombre),
-        empleados(nombre),
-        tipo_pago(nombre),
-        ventas_detalle(
-          id,
-          cantidad,
-          productos_id,
-          productos(nombre, precio, costo)
-        )
-      `)
+                id,
+                created_at,
+                origen,
+                sucursales_id,
+                clientes(nombre),
+                sucursales(nombre),
+                empleados(nombre),
+                tipo_pago(nombre),
+                ventas_detalle(cantidad, productos(nombre, precio, costo))
+              `)
             .order('created_at', { ascending: false })
 
         if (!error) setVentas(data)
@@ -83,6 +81,7 @@ export function useVentas() {
             p_venta_id: data.id,
             p_total: total,
             p_costo: costo,
+            p_sucursal_id: venta.sucursales_id,
         })
 
         const { data: tipoPago } = await supabase
