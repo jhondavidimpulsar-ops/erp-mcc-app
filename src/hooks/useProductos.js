@@ -55,14 +55,19 @@ export function useProductos() {
     }
 
     async function actualizarProducto(id, producto) {
-        const datos = {
-            ...producto,
-            sucursales_id: producto.sucursales_id || null,
-            categorias_id: producto.categorias_id || null,
-        }
-        const { error } = await supabase.from('productos').update(datos).eq('id', id)
-        if (!error) fetchProductos()
-        return { error }
+      const datos = {
+        nombre: producto.nombre,
+        codigo: producto.codigo,
+        precio: Number(producto.precio),
+        costo: Number(producto.costo),
+        categorias_id: producto.categorias_id || null,
+        sucursales_id: producto.sucursales_id || null,
+        descripcion: producto.descripcion || null,
+        imagen_url: producto.imagen_url || null,
+      }
+      const { error } = await supabase.from('productos').update(datos).eq('id', id)
+      if (!error) fetchProductos()
+      return { error }
     }
     async function eliminarProducto(id) {
         const { error } = await supabase.from('productos').delete().eq('id', id)
