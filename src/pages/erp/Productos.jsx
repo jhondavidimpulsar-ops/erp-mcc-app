@@ -4,12 +4,14 @@ import { useProductos } from '../../hooks/useProductos'
 import { formatMoneda } from '../../utils/formatMoneda'
 
 const productoVacio = {
-    nombre: '',
-    codigo: '',
-    precio: '',
-    costo: '',
-    categorias_id: '',
-    sucursales_id: '',
+  nombre: '',
+  codigo: '',
+  precio: '',
+  costo: '',
+  categorias_id: '',
+  sucursales_id: '',
+  descripcion: '',
+  imagen_url: '',
 }
 
 export default function Productos() {
@@ -42,16 +44,18 @@ export default function Productos() {
     }
 
     const handleEditar = (producto) => {
-        setForm({
-            nombre: producto.nombre,
-            codigo: producto.codigo,
-            precio: producto.precio,
-            costo: producto.costo,
-            categorias_id: producto.categorias_id,
-            sucursales_id: producto.sucursales_id,
-        })
-        setEditando(producto.id)
-        setMostrarForm(true)
+      setForm({
+        nombre: producto.nombre,
+        codigo: producto.codigo,
+        precio: producto.precio,
+        costo: producto.costo,
+        categorias_id: producto.categorias_id ?? '',
+        sucursales_id: producto.sucursales_id ?? '',
+        descripcion: producto.descripcion ?? '',
+        imagen_url: producto.imagen_url ?? '',
+      })
+      setEditando(producto.id)
+      setMostrarForm(true)
     }
 
     const handleCancelar = () => {
