@@ -70,21 +70,42 @@ export function useOrdenes() {
         return { error: null }
     }
 
-    async function recibirOrden(orden) {
-        for (const detalle of orden.orden_de_compras_detalle) {
-            await supabase.rpc('aumentar_inventario', {
-                p_producto_id: detalle.productos_id,
-                p_sucursal_id: orden.sucursales_id,
-                p_cantidad: detalle.cantidad,
-            })
-        }
-
-        await supabase
+    async function recibirOrden(id) {
+        // 1. Marcar orden como recibida
+        const { error } = await supabase
             .from('orden_de_compras')
             .update({ estado: 'recibida' })
-            .eq('id', orden.id)
+            .eq('id', id)
+
+        if (error) return { error }
+
+        // 2. Obtener detalle de la orden
+        const { data: orden } = await supabase
+            .from('orden_de_compras')
+            .select(`
+      id,
+      provedores_id,
+      sucursales_id,
+      orden_de_compras_detalle(costo, cantidad)
+    `)
+            .eq('id', id)
+            .single()
+
+        // 3. Calcular total
+        const total = orden.orden_de_compras_detalle?.reduce(
+            (acc, d) => acc + d.costo * d.cantidad, 0
+        ) ?? 0
+
+        // 4. Crear CXP automáticamente
+        await supabase.from('cxp').insert({
+            orden_de_compras_id: orden.id,
+            provedores_id: orden.provedores_id,
+            monto_total: total,
+            estado: 'pendiente',
+        })
 
         fetchOrdenes()
+        return { error: null }
     }
 
     async function eliminarOrden(orden) {

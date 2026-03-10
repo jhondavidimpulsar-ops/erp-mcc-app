@@ -14,6 +14,7 @@ import Contabilidad from './pages/erp/Contabilidad'
 import CXC from './pages/erp/CXC'
 import Sucursales from './pages/erp/Sucursales'
 import Pedidos from './pages/erp/Pedidos'
+import CXP from './pages/erp/CXP'
 
 
 function ProtectedRoute({ children }) {
@@ -40,6 +41,7 @@ function AppRoutes() {
             <Route path="/contabilidad" element={<ProtectedRoute><Contabilidad /></ProtectedRoute>} />
             <Route path="/cxc" element={<ProtectedRoute><CXC /></ProtectedRoute>} />
             <Route path="/pedidos" element={<ProtectedRoute><Pedidos /></ProtectedRoute>} />
+            <Route path="/cxp" element={<ProtectedRoute><CXP /></ProtectedRoute>} />
             <Route path="*" element={<Navigate to="/login" />} />
         </Routes>
     )

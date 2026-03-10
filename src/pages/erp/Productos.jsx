@@ -68,17 +68,6 @@ export default function Productos() {
     return (
         <Layout>
             <div className="flex justify-between items-center mb-6">
-                <select
-                    className="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    name="sucursales_id"
-                    value={form.sucursales_id}
-                    onChange={handleChange}
-                >
-                    <option value="">Sin sucursal específica</option>
-                    {sucursales.map(suc => (
-                        <option key={suc.id} value={suc.id}>{suc.nombre}</option>
-                    ))}
-                </select>
                 <h2 className="text-2xl font-bold text-gray-800">Productos</h2>
                 {!mostrarForm && (
                     <button

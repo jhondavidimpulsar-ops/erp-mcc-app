@@ -353,7 +353,7 @@ export default function Ordenes() {
                                         {orden.estado === 'pendiente' && (
                                             <button
                                                 className="text-green-600 hover:underline text-xs"
-                                                onClick={() => recibirOrden(orden)}
+                                                onClick={() => recibirOrden(orden.id)}
                                             >
                                                 Recibir
                                             </button>
