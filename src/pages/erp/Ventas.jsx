@@ -5,6 +5,9 @@ import { useClientes } from '../../hooks/useClientes'
 import { useProductos } from '../../hooks/useProductos'
 import { useEmpleado } from '../../hooks/useEmpleado'
 import { supabase } from '../../supabaseClient'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
+import * as XLSX from 'xlsx'
 
 export default function Ventas() {
     const { ventas, loading, registrarVenta, cancelarVenta } = useVentas()
@@ -202,18 +205,109 @@ export default function Ventas() {
         c.cedula?.includes(busquedaCliente)
     )
 
+    const generarPDF = () => {
+        const doc = new jsPDF()
+
+        doc.setFontSize(18)
+        doc.setTextColor(31, 41, 55)
+        doc.text('Reporte de Ventas', 14, 20)
+
+        doc.setFontSize(10)
+        doc.setTextColor(107, 114, 128)
+        doc.text(`Generado: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`, 14, 28)
+        doc.text(`Total ventas: ${ventasFiltradas.length}`, 14, 34)
+
+        const totalGeneral = ventasFiltradas
+            .filter(v => v.estado !== 'cancelada')
+            .reduce((acc, v) => acc + (v.ventas_detalle?.reduce(
+                (a, d) => a + (d.precio ?? d.productos?.precio ?? 0) * d.cantidad, 0
+            ) ?? 0), 0)
+        doc.text(`Total general: $${totalGeneral.toFixed(2)}`, 14, 40)
+
+        autoTable(doc, {
+            startY: 48,
+            head: [['Cliente', 'Sucursal', 'Empleado', 'Pago', 'Origen', 'Total', 'Fecha', 'Estado']],
+            body: ventasFiltradas.map(venta => {
+                const totalVenta = venta.ventas_detalle?.reduce(
+                    (acc, d) => acc + (d.precio ?? d.productos?.precio ?? 0) * d.cantidad, 0
+                )
+                return [
+                    venta.clientes?.nombre ?? '—',
+                    venta.sucursales?.nombre ?? '—',
+                    venta.empleados?.nombre ?? '—',
+                    venta.tipo_pago?.nombre ?? '—',
+                    venta.origen === 'ecommerce' ? 'Online' : 'ERP',
+                    `$${totalVenta?.toFixed(2) ?? '0.00'}`,
+                    new Date(venta.created_at).toLocaleDateString(),
+                    venta.estado ?? 'completada',
+                ]
+            }),
+            styles: { fontSize: 7 },
+            headStyles: { fillColor: [37, 99, 235], textColor: 255 },
+            alternateRowStyles: { fillColor: [249, 250, 251] },
+        })
+
+        doc.save(`ventas_${new Date().toISOString().split('T')[0]}.pdf`)
+    }
+
+    const exportarExcel = () => {
+        const datos = ventasFiltradas.map(venta => {
+            const totalVenta = venta.ventas_detalle?.reduce(
+                (acc, d) => acc + (d.precio ?? d.productos?.precio ?? 0) * d.cantidad, 0
+            )
+            return {
+                'Cliente': venta.clientes?.nombre ?? '—',
+                'Sucursal': venta.sucursales?.nombre ?? '—',
+                'Empleado': venta.empleados?.nombre ?? '—',
+                'Método de pago': venta.tipo_pago?.nombre ?? '—',
+                'Origen': venta.origen === 'ecommerce' ? 'Online' : 'ERP',
+                'Total': totalVenta?.toFixed(2) ?? '0.00',
+                'Fecha': new Date(venta.created_at).toLocaleDateString(),
+                'Estado': venta.estado ?? 'completada',
+                'Productos': venta.ventas_detalle?.map(d => d.productos?.nombre).join(', ') ?? '—',
+            }
+        })
+
+        const worksheet = XLSX.utils.json_to_sheet(datos)
+        const workbook = XLSX.utils.book_new()
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Ventas')
+
+        worksheet['!cols'] = [
+            { wch: 25 }, { wch: 20 }, { wch: 20 }, { wch: 15 },
+            { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 50 },
+        ]
+
+        XLSX.writeFile(workbook, `ventas_${new Date().toISOString().split('T')[0]}.xlsx`)
+    }
+
     return (
         <Layout>
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold text-gray-800">Ventas</h2>
-                {!mostrarForm && (
-                    <button
-                        className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition text-sm"
-                        onClick={handleAbrirForm}
-                    >
-                        + Nueva venta
-                    </button>
-                )}
+                <div className="flex gap-2">
+                    {!mostrarForm && (
+                        <>
+                            <button
+                                className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition text-sm"
+                                onClick={exportarExcel}
+                            >
+                                📊 Excel
+                            </button>
+                            <button
+                                className="bg-gray-700 text-white px-4 py-2 rounded-lg hover:bg-gray-800 transition text-sm"
+                                onClick={generarPDF}
+                            >
+                                📄 PDF
+                            </button>
+                            <button
+                                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition text-sm"
+                                onClick={handleAbrirForm}
+                            >
+                                + Nueva venta
+                            </button>
+                        </>
+                    )}
+                </div>
             </div>
 
             {/* Formulario nueva venta */}

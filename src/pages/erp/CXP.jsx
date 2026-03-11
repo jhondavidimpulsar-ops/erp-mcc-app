@@ -2,6 +2,9 @@ import { useState } from 'react'
 import Layout from '../../components/Layout'
 import { useCXP } from '../../hooks/useCXP'
 import { formatMoneda } from '../../utils/formatMoneda'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
+import * as XLSX from 'xlsx'
 
 export default function CXP() {
     const { cxps, tiposPago, loading, registrarAbono } = useCXP()
@@ -10,6 +13,7 @@ export default function CXP() {
     const [tipoPagoId, setTipoPagoId] = useState('')
     const [error, setError] = useState(null)
     const [filtro, setFiltro] = useState('pendiente')
+    const [filtroProveedor, setFiltroProveedor] = useState('')
 
     const handleAbono = async () => {
         setError(null)
@@ -18,9 +22,7 @@ export default function CXP() {
         const cxp = cxps.find(c => c.id === abonoForm)
         const saldo = cxp.monto_total - cxp.monto_pagado
 
-        if (Number(monto) > saldo) {
-            return setError(`El abono no puede ser mayor al saldo pendiente.`)
-        }
+        if (Number(monto) > saldo) return setError('El abono no puede ser mayor al saldo pendiente.')
 
         const { error } = await registrarAbono(abonoForm, monto, tipoPagoId)
         if (error) { setError(error.message); return }
@@ -30,9 +32,16 @@ export default function CXP() {
         setTipoPagoId('')
     }
 
-    const cxpsFiltradas = cxps.filter(c =>
-        filtro === 'todas' ? true : c.estado === filtro
-    )
+    // Lista única de proveedores para el filtro
+    const proveedoresUnicos = [...new Map(
+        cxps.map(c => [c.provedores?.id, c.provedores])
+    ).values()].filter(Boolean)
+
+    const cxpsFiltradas = cxps.filter(c => {
+        const matchEstado = filtro === 'todas' ? true : c.estado === filtro
+        const matchProveedor = filtroProveedor ? c.provedores?.id === filtroProveedor : true
+        return matchEstado && matchProveedor
+    })
 
     // Totales pendientes por moneda
     const totalesPendientes = (() => {
@@ -53,10 +62,97 @@ export default function CXP() {
     const monedaActual = sucActiva?.moneda ?? 'USD'
     const simboloActual = sucActiva?.simbolo ?? '$'
 
+    const generarPDF = () => {
+        const doc = new jsPDF()
+
+        doc.setFontSize(18)
+        doc.setTextColor(31, 41, 55)
+        doc.text('Reporte de Cuentas por Pagar', 14, 20)
+
+        doc.setFontSize(10)
+        doc.setTextColor(107, 114, 128)
+        doc.text(`Generado: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`, 14, 28)
+        doc.text(`Total registros: ${cxpsFiltradas.length}`, 14, 34)
+
+        totalesPendientes.forEach((t, i) => {
+            doc.text(`Saldo pendiente: ${formatMoneda(t.total, t.moneda, t.simbolo)}`, 14, 40 + i * 6)
+        })
+
+        const startY = 40 + totalesPendientes.length * 6 + 4
+
+        autoTable(doc, {
+            startY,
+            head: [['Proveedor', 'Sucursal', 'Total', 'Pagado', 'Saldo', 'Estado', 'Fecha']],
+            body: cxpsFiltradas.map(cxp => {
+                const suc = cxp.orden_de_compras?.sucursales
+                const moneda = suc?.moneda ?? 'USD'
+                const simbolo = suc?.simbolo ?? '$'
+                const saldo = cxp.monto_total - cxp.monto_pagado
+                return [
+                    cxp.provedores?.nombre ?? '—',
+                    suc?.nombre ?? '—',
+                    formatMoneda(cxp.monto_total, moneda, simbolo),
+                    formatMoneda(cxp.monto_pagado, moneda, simbolo),
+                    formatMoneda(saldo, moneda, simbolo),
+                    cxp.estado === 'pagado' ? 'Pagada' : 'Pendiente',
+                    new Date(cxp.created_at).toLocaleDateString(),
+                ]
+            }),
+            styles: { fontSize: 8 },
+            headStyles: { fillColor: [37, 99, 235], textColor: 255 },
+            alternateRowStyles: { fillColor: [249, 250, 251] },
+        })
+
+        doc.save(`cxp_${new Date().toISOString().split('T')[0]}.pdf`)
+    }
+
+    const exportarExcel = () => {
+        const datos = cxpsFiltradas.map(cxp => {
+            const suc = cxp.orden_de_compras?.sucursales
+            const moneda = suc?.moneda ?? 'USD'
+            const simbolo = suc?.simbolo ?? '$'
+            const saldo = cxp.monto_total - cxp.monto_pagado
+            return {
+                'Proveedor': cxp.provedores?.nombre ?? '—',
+                'Sucursal': suc?.nombre ?? '—',
+                'Total': formatMoneda(cxp.monto_total, moneda, simbolo),
+                'Pagado': formatMoneda(cxp.monto_pagado, moneda, simbolo),
+                'Saldo': formatMoneda(saldo, moneda, simbolo),
+                'Estado': cxp.estado === 'pagado' ? 'Pagada' : 'Pendiente',
+                'Fecha': new Date(cxp.created_at).toLocaleDateString(),
+            }
+        })
+
+        const worksheet = XLSX.utils.json_to_sheet(datos)
+        const workbook = XLSX.utils.book_new()
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'CXP')
+
+        worksheet['!cols'] = [
+            { wch: 25 }, { wch: 20 }, { wch: 15 },
+            { wch: 15 }, { wch: 15 }, { wch: 12 }, { wch: 12 },
+        ]
+
+        XLSX.writeFile(workbook, `cxp_${new Date().toISOString().split('T')[0]}.xlsx`)
+    }
+
     return (
         <Layout>
-            <div className="mb-6">
+            <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold text-gray-800">Cuentas por Pagar</h2>
+                <div className="flex gap-2">
+                    <button
+                        className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition text-sm"
+                        onClick={exportarExcel}
+                    >
+                        📊 Excel
+                    </button>
+                    <button
+                        className="bg-gray-700 text-white px-4 py-2 rounded-lg hover:bg-gray-800 transition text-sm"
+                        onClick={generarPDF}
+                    >
+                        📄 PDF
+                    </button>
+                </div>
             </div>
 
             {/* Resumen */}
@@ -88,24 +184,50 @@ export default function CXP() {
             </div>
 
             {/* Filtros */}
-            <div className="flex gap-2 mb-6">
-                {[
-                    { id: 'pendiente', label: 'Pendientes' },
-                    { id: 'pagado', label: 'Pagadas' },
-                    { id: 'todas', label: 'Todas' },
-                ].map(f => (
-                    <button
-                        key={f.id}
-                        className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-                            filtro === f.id
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-white text-gray-600 hover:bg-gray-50 shadow-sm'
-                        }`}
-                        onClick={() => setFiltro(f.id)}
+            <div className="bg-white rounded-lg shadow-sm p-4 mb-4 flex flex-wrap gap-4 items-end">
+                <div className="flex gap-2">
+                    {[
+                        { id: 'pendiente', label: 'Pendientes' },
+                        { id: 'pagado', label: 'Pagadas' },
+                        { id: 'todas', label: 'Todas' },
+                    ].map(f => (
+                        <button
+                            key={f.id}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                                filtro === f.id
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                            }`}
+                            onClick={() => setFiltro(f.id)}
+                        >
+                            {f.label}
+                        </button>
+                    ))}
+                </div>
+                <div>
+                    <label className="text-xs font-medium text-gray-500 mb-1 block">Proveedor</label>
+                    <select
+                        className="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                        value={filtroProveedor}
+                        onChange={(e) => setFiltroProveedor(e.target.value)}
                     >
-                        {f.label}
+                        <option value="">Todos los proveedores</option>
+                        {proveedoresUnicos.map(p => (
+                            <option key={p.id} value={p.id}>{p.nombre}</option>
+                        ))}
+                    </select>
+                </div>
+                {filtroProveedor && (
+                    <button
+                        className="text-sm text-gray-400 hover:text-gray-600"
+                        onClick={() => setFiltroProveedor('')}
+                    >
+                        Limpiar
                     </button>
-                ))}
+                )}
+                <p className="text-xs text-gray-400 ml-auto self-center">
+                    {cxpsFiltradas.length} registros
+                </p>
             </div>
 
             {/* Lista CXP */}
@@ -136,8 +258,8 @@ export default function CXP() {
                                             ? 'bg-green-100 text-green-700'
                                             : 'bg-yellow-100 text-yellow-700'
                                     }`}>
-                    {cxp.estado === 'pagado' ? 'Pagada' : 'Pendiente'}
-                  </span>
+                                        {cxp.estado === 'pagado' ? 'Pagada' : 'Pendiente'}
+                                    </span>
                                 </div>
 
                                 <div className="grid grid-cols-3 gap-4 mb-4">
@@ -168,12 +290,12 @@ export default function CXP() {
                                         <div className="flex flex-col gap-1">
                                             {cxp.cxp_abonos.map(abono => (
                                                 <div key={abono.id} className="flex justify-between text-sm bg-gray-50 px-3 py-2 rounded">
-                          <span className="text-gray-600">
-                            {new Date(abono.created_at).toLocaleDateString()} · {abono.tipo_pago?.nombre}
-                          </span>
+                                                    <span className="text-gray-600">
+                                                        {new Date(abono.created_at).toLocaleDateString()} · {abono.tipo_pago?.nombre}
+                                                    </span>
                                                     <span className="font-medium text-green-600">
-                            {formatMoneda(Number(abono.monto), moneda, simbolo)}
-                          </span>
+                                                        {formatMoneda(Number(abono.monto), moneda, simbolo)}
+                                                    </span>
                                                 </div>
                                             ))}
                                         </div>

@@ -3,6 +3,9 @@ import Layout from '../../components/Layout'
 import { useCXC } from '../../hooks/useCXC'
 import { useSucursales } from '../../hooks/useSucursales'
 import { formatMoneda } from '../../utils/formatMoneda'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
+import * as XLSX from 'xlsx'
 
 export default function CXC() {
     const { cxcs, tiposPago, loading, registrarAbono } = useCXC()
@@ -11,6 +14,7 @@ export default function CXC() {
     const [monto, setMonto] = useState('')
     const [tipoPagoId, setTipoPagoId] = useState('')
     const [error, setError] = useState(null)
+    const [filtroCliente, setFiltroCliente] = useState('')
     const [filtro, setFiltro] = useState('pendiente')
 
     const handleAbono = async () => {
@@ -32,9 +36,15 @@ export default function CXC() {
         setTipoPagoId('')
     }
 
-    const cxcsFiltradas = cxcs.filter(c =>
-        filtro === 'todas' ? true : c.estado === filtro
-    )
+    const cxcsFiltradas = cxcs.filter(c => {
+        const matchEstado = filtro === 'todas' ? true : c.estado === filtro
+        const matchCliente = filtroCliente ? c.clientes?.id === filtroCliente : true
+        return matchEstado && matchCliente
+    })
+
+    const clientesUnicos = [...new Map(
+        cxcs.map(c => [c.clientes?.id, c.clientes])
+    ).values()].filter(Boolean)
 
     // Totales pendientes por moneda
     const totalesPendientes = (() => {
@@ -56,10 +66,99 @@ export default function CXC() {
     const monedaActual = sucActiva?.moneda ?? 'USD'
     const simboloActual = sucActiva?.simbolo ?? '$'
 
+    const generarPDF = () => {
+        const doc = new jsPDF()
+
+        doc.setFontSize(18)
+        doc.setTextColor(31, 41, 55)
+        doc.text('Reporte de Cuentas por Cobrar', 14, 20)
+
+        doc.setFontSize(10)
+        doc.setTextColor(107, 114, 128)
+        doc.text(`Generado: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`, 14, 28)
+        doc.text(`Total registros: ${cxcsFiltradas.length}`, 14, 34)
+
+        totalesPendientes.forEach((t, i) => {
+            doc.text(`Saldo pendiente: ${formatMoneda(t.total, t.moneda, t.simbolo)}`, 14, 40 + i * 6)
+        })
+
+        const startY = 40 + totalesPendientes.length * 6 + 4
+
+        autoTable(doc, {
+            startY,
+            head: [['Cliente', 'Cédula', 'Sucursal', 'Total', 'Pagado', 'Saldo', 'Estado', 'Fecha']],
+            body: cxcsFiltradas.map(cxc => {
+                const sucCxc = sucursales?.find(s => s.id === cxc.ventas?.sucursales_id)
+                const moneda = sucCxc?.moneda ?? 'USD'
+                const simbolo = sucCxc?.simbolo ?? '$'
+                const saldo = cxc.monto_total - cxc.monto_pagado
+                return [
+                    cxc.clientes?.nombre ?? '—',
+                    cxc.clientes?.cedula ?? '—',
+                    cxc.ventas?.sucursales?.nombre ?? '—',
+                    formatMoneda(cxc.monto_total, moneda, simbolo),
+                    formatMoneda(cxc.monto_pagado, moneda, simbolo),
+                    formatMoneda(saldo, moneda, simbolo),
+                    cxc.estado === 'pagado' ? 'Cobrada' : 'Pendiente',
+                    new Date(cxc.created_at).toLocaleDateString(),
+                ]
+            }),
+            styles: { fontSize: 7 },
+            headStyles: { fillColor: [37, 99, 235], textColor: 255 },
+            alternateRowStyles: { fillColor: [249, 250, 251] },
+        })
+
+        doc.save(`cxc_${new Date().toISOString().split('T')[0]}.pdf`)
+    }
+
+    const exportarExcel = () => {
+        const datos = cxcsFiltradas.map(cxc => {
+            const sucCxc = sucursales?.find(s => s.id === cxc.ventas?.sucursales_id)
+            const moneda = sucCxc?.moneda ?? 'USD'
+            const simbolo = sucCxc?.simbolo ?? '$'
+            const saldo = cxc.monto_total - cxc.monto_pagado
+            return {
+                'Cliente': cxc.clientes?.nombre ?? '—',
+                'Cédula': cxc.clientes?.cedula ?? '—',
+                'Sucursal': cxc.ventas?.sucursales?.nombre ?? '—',
+                'Total': formatMoneda(cxc.monto_total, moneda, simbolo),
+                'Pagado': formatMoneda(cxc.monto_pagado, moneda, simbolo),
+                'Saldo': formatMoneda(saldo, moneda, simbolo),
+                'Estado': cxc.estado === 'pagado' ? 'Cobrada' : 'Pendiente',
+                'Fecha': new Date(cxc.created_at).toLocaleDateString(),
+            }
+        })
+
+        const worksheet = XLSX.utils.json_to_sheet(datos)
+        const workbook = XLSX.utils.book_new()
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'CXC')
+
+        worksheet['!cols'] = [
+            { wch: 25 }, { wch: 15 }, { wch: 20 }, { wch: 15 },
+            { wch: 15 }, { wch: 15 }, { wch: 12 }, { wch: 12 },
+        ]
+
+        XLSX.writeFile(workbook, `cxc_${new Date().toISOString().split('T')[0]}.xlsx`)
+    }
+
     return (
         <Layout>
-            <div className="mb-6">
+            <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold text-gray-800">Cuentas por Cobrar</h2>
+                <div className="flex gap-2">
+                    <button
+                        className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition text-sm"
+                        onClick={exportarExcel}
+                    >
+                        📊 Excel
+                    </button>
+                    <button
+                        className="bg-gray-700 text-white px-4 py-2 rounded-lg hover:bg-gray-800 transition text-sm"
+                        onClick={generarPDF}
+                    >
+                        📄 PDF
+                    </button>
+                </div>
             </div>
 
             {/* Resumen */}
@@ -91,24 +190,50 @@ export default function CXC() {
             </div>
 
             {/* Filtros */}
-            <div className="flex gap-2 mb-6">
-                {[
-                    { id: 'pendiente', label: 'Pendientes' },
-                    { id: 'pagado', label: 'Cobradas' },
-                    { id: 'todas', label: 'Todas' },
-                ].map(f => (
-                    <button
-                        key={f.id}
-                        className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-                            filtro === f.id
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-white text-gray-600 hover:bg-gray-50 shadow-sm'
-                        }`}
-                        onClick={() => setFiltro(f.id)}
+            <div className="bg-white rounded-lg shadow-sm p-4 mb-4 flex flex-wrap gap-4 items-end">
+                <div className="flex gap-2">
+                    {[
+                        { id: 'pendiente', label: 'Pendientes' },
+                        { id: 'pagado', label: 'Cobradas' },
+                        { id: 'todas', label: 'Todas' },
+                    ].map(f => (
+                        <button
+                            key={f.id}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                                filtro === f.id
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                            }`}
+                            onClick={() => setFiltro(f.id)}
+                        >
+                            {f.label}
+                        </button>
+                    ))}
+                </div>
+                <div>
+                    <label className="text-xs font-medium text-gray-500 mb-1 block">Cliente</label>
+                    <select
+                        className="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                        value={filtroCliente}
+                        onChange={(e) => setFiltroCliente(e.target.value)}
                     >
-                        {f.label}
+                        <option value="">Todos los clientes</option>
+                        {clientesUnicos.map(c => (
+                            <option key={c.id} value={c.id}>{c.nombre}</option>
+                        ))}
+                    </select>
+                </div>
+                {filtroCliente && (
+                    <button
+                        className="text-sm text-gray-400 hover:text-gray-600"
+                        onClick={() => setFiltroCliente('')}
+                    >
+                        Limpiar
                     </button>
-                ))}
+                )}
+                <p className="text-xs text-gray-400 ml-auto self-center">
+                    {cxcsFiltradas.length} registros
+                </p>
             </div>
 
             {/* Lista CXC */}

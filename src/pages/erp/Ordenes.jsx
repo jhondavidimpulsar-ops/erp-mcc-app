@@ -4,10 +4,13 @@ import { useOrdenes } from '../../hooks/useOrdenes'
 import { useProductos } from '../../hooks/useProductos'
 import { useEmpleado } from '../../hooks/useEmpleado'
 import { formatMoneda } from '../../utils/formatMoneda'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
+import * as XLSX from 'xlsx'
 
 export default function Ordenes() {
     const { ordenes, proveedores, sucursales, loading, crearOrden, recibirOrden, eliminarOrden } = useOrdenes()
-    const { productos} = useProductos()
+    const { productos } = useProductos()
     const { empleado } = useEmpleado()
 
     const [mostrarForm, setMostrarForm] = useState(false)
@@ -23,6 +26,12 @@ export default function Ordenes() {
     const [error, setError] = useState(null)
     const [exito, setExito] = useState(false)
 
+    // Filtros historial
+    const [filtroProveedor, setFiltroProveedor] = useState('')
+    const [filtroEstado, setFiltroEstado] = useState('')
+    const [fechaInicio, setFechaInicio] = useState('')
+    const [fechaFin, setFechaFin] = useState('')
+
     const sucursalActual = sucursales?.find(s => s.id === sucursalId)
     const moneda = sucursalActual?.moneda ?? 'USD'
     const simbolo = sucursalActual?.simbolo ?? '$'
@@ -36,7 +45,6 @@ export default function Ordenes() {
 
     const handleAgregarAlCarrito = () => {
         if (!productoSeleccionado || !costo) return
-
         const producto = productos.find(p => p.id === productoSeleccionado)
         if (!producto) return
 
@@ -110,25 +118,129 @@ export default function Ordenes() {
         setError(null)
     }
 
+    const generarPDF = () => {
+        const doc = new jsPDF()
+
+        doc.setFontSize(18)
+        doc.setTextColor(31, 41, 55)
+        doc.text('Reporte de Órdenes de Compra', 14, 20)
+
+        doc.setFontSize(10)
+        doc.setTextColor(107, 114, 128)
+        doc.text(`Generado: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`, 14, 28)
+        doc.text(`Total órdenes: ${ordenesFiltradas.length}`, 14, 34)
+
+        autoTable(doc, {
+            startY: 42,
+            head: [['Proveedor', 'Sucursal', 'Total', 'Estado', 'Fecha']],
+            body: ordenesFiltradas.map(orden => {
+                const sucOrden = sucursales?.find(s => s.id === orden.sucursales_id)
+                const monedaOrden = sucOrden?.moneda ?? 'USD'
+                const simboloOrden = sucOrden?.simbolo ?? '$'
+                const total = orden.orden_de_compras_detalle?.reduce(
+                    (acc, d) => acc + d.costo * d.cantidad, 0
+                )
+                return [
+                    orden.provedores?.nombre ?? '—',
+                    orden.sucursales?.nombre ?? '—',
+                    formatMoneda(total, monedaOrden, simboloOrden),
+                    orden.estado,
+                    new Date(orden.created_at).toLocaleDateString(),
+                ]
+            }),
+            styles: { fontSize: 8 },
+            headStyles: { fillColor: [37, 99, 235], textColor: 255 },
+            alternateRowStyles: { fillColor: [249, 250, 251] },
+        })
+
+        doc.save(`ordenes_${new Date().toISOString().split('T')[0]}.pdf`)
+    }
+
+    const exportarExcel = () => {
+        const datos = ordenesFiltradas.map(orden => {
+            const sucOrden = sucursales?.find(s => s.id === orden.sucursales_id)
+            const monedaOrden = sucOrden?.moneda ?? 'USD'
+            const simboloOrden = sucOrden?.simbolo ?? '$'
+            const total = orden.orden_de_compras_detalle?.reduce(
+                (acc, d) => acc + d.costo * d.cantidad, 0
+            )
+            return {
+                'Proveedor': orden.provedores?.nombre ?? '—',
+                'Sucursal': orden.sucursales?.nombre ?? '—',
+                'Productos': orden.orden_de_compras_detalle?.map(d => d.productos?.nombre).join(', '),
+                'Total': formatMoneda(total, monedaOrden, simboloOrden),
+                'Estado': orden.estado,
+                'Fecha': new Date(orden.created_at).toLocaleDateString(),
+            }
+        })
+
+        const worksheet = XLSX.utils.json_to_sheet(datos)
+        const workbook = XLSX.utils.book_new()
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Órdenes')
+
+        worksheet['!cols'] = [
+            { wch: 25 },
+            { wch: 20 },
+            { wch: 50 },
+            { wch: 15 },
+            { wch: 12 },
+            { wch: 12 },
+        ]
+
+        XLSX.writeFile(workbook, `ordenes_${new Date().toISOString().split('T')[0]}.xlsx`)
+    }
+
     const productosFiltrados = productos.filter(p =>
         p.nombre.toLowerCase().includes(busquedaProducto.toLowerCase()) ||
         p.codigo?.toLowerCase().includes(busquedaProducto.toLowerCase())
     )
 
+    const ordenesFiltradas = ordenes.filter(orden => {
+        const matchProveedor = filtroProveedor
+            ? orden.provedores_id === filtroProveedor
+            : true
+        const matchEstado = filtroEstado
+            ? orden.estado === filtroEstado
+            : true
+        const fecha = new Date(orden.created_at)
+        const matchInicio = fechaInicio ? fecha >= new Date(fechaInicio) : true
+        const matchFin = fechaFin ? fecha <= new Date(fechaFin + 'T23:59:59') : true
+        return matchProveedor && matchEstado && matchInicio && matchFin
+    })
+
+    const hayFiltros = filtroProveedor || filtroEstado || fechaInicio || fechaFin
+
     return (
         <Layout>
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold text-gray-800">Órdenes de Compra</h2>
-                {!mostrarForm && (
-                    <button
-                        className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition text-sm"
-                        onClick={() => setMostrarForm(true)}
-                    >
-                        + Nueva orden
-                    </button>
-                )}
+                <div className="flex gap-2">
+                    {!mostrarForm && (
+                        <>
+                            <button
+                                className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition text-sm"
+                                onClick={exportarExcel}
+                            >
+                                📊 Excel
+                            </button>
+                            <button
+                                className="bg-gray-700 text-white px-4 py-2 rounded-lg hover:bg-gray-800 transition text-sm"
+                                onClick={generarPDF}
+                            >
+                                📄 PDF
+                            </button>
+                            <button
+                                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition text-sm"
+                                onClick={() => setMostrarForm(true)}
+                            >
+                                + Nueva orden
+                            </button>
+                        </>
+                    )}
+                </div>
             </div>
 
+            {/* Formulario nueva orden */}
             {mostrarForm && (
                 <div className="bg-white rounded-lg shadow-sm p-6 mb-6 flex flex-col gap-6">
                     <h3 className="text-lg font-bold text-gray-800">Nueva orden de compra</h3>
@@ -153,7 +265,6 @@ export default function Ordenes() {
                                 ))}
                             </select>
                         </div>
-
                         <div>
                             <label className="text-sm font-medium text-gray-700 mb-1 block">Sucursal destino</label>
                             <select
@@ -269,7 +380,9 @@ export default function Ordenes() {
                                 ))}
                                 </tbody>
                             </table>
-                            <p className="text-right font-bold text-gray-800 text-lg">Total: {formatMoneda(totalOrden, moneda, simbolo)}</p>
+                            <p className="text-right font-bold text-gray-800 text-lg">
+                                Total: {formatMoneda(totalOrden, moneda, simbolo)}
+                            </p>
                         </div>
                     )}
 
@@ -303,11 +416,75 @@ export default function Ordenes() {
                 </div>
             )}
 
+            {/* Filtros historial */}
+            <div className="bg-white rounded-lg shadow-sm p-4 mb-4 flex flex-wrap gap-4 items-end">
+                <div>
+                    <label className="text-xs font-medium text-gray-500 mb-1 block">Proveedor</label>
+                    <select
+                        className="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                        value={filtroProveedor}
+                        onChange={(e) => setFiltroProveedor(e.target.value)}
+                    >
+                        <option value="">Todos los proveedores</option>
+                        {proveedores.map(p => (
+                            <option key={p.id} value={p.id}>{p.nombre}</option>
+                        ))}
+                    </select>
+                </div>
+                <div>
+                    <label className="text-xs font-medium text-gray-500 mb-1 block">Estado</label>
+                    <select
+                        className="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                        value={filtroEstado}
+                        onChange={(e) => setFiltroEstado(e.target.value)}
+                    >
+                        <option value="">Todos</option>
+                        <option value="pendiente">Pendiente</option>
+                        <option value="recibida">Recibida</option>
+                    </select>
+                </div>
+                <div>
+                    <label className="text-xs font-medium text-gray-500 mb-1 block">Desde</label>
+                    <input
+                        className="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                        type="date"
+                        value={fechaInicio}
+                        onChange={(e) => setFechaInicio(e.target.value)}
+                    />
+                </div>
+                <div>
+                    <label className="text-xs font-medium text-gray-500 mb-1 block">Hasta</label>
+                    <input
+                        className="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                        type="date"
+                        value={fechaFin}
+                        onChange={(e) => setFechaFin(e.target.value)}
+                    />
+                </div>
+                {hayFiltros && (
+                    <button
+                        className="text-sm text-gray-400 hover:text-gray-600"
+                        onClick={() => {
+                            setFiltroProveedor('')
+                            setFiltroEstado('')
+                            setFechaInicio('')
+                            setFechaFin('')
+                        }}
+                    >
+                        Limpiar filtros
+                    </button>
+                )}
+                <p className="text-xs text-gray-400 ml-auto self-center">
+                    {ordenesFiltradas.length} órdenes
+                </p>
+            </div>
+
+            {/* Tabla órdenes */}
             <div className="bg-white rounded-lg shadow-sm overflow-hidden">
                 {loading ? (
                     <p className="p-6 text-gray-500">Cargando órdenes...</p>
-                ) : ordenes.length === 0 ? (
-                    <p className="p-6 text-gray-500">No hay órdenes de compra aún.</p>
+                ) : ordenesFiltradas.length === 0 ? (
+                    <p className="p-6 text-gray-500">No hay órdenes que coincidan.</p>
                 ) : (
                     <table className="w-full text-sm">
                         <thead className="bg-gray-50 text-gray-500 uppercase text-xs">
@@ -322,7 +499,7 @@ export default function Ordenes() {
                         </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
-                        {ordenes.map(orden => {
+                        {ordenesFiltradas.map(orden => {
                             const sucOrden = sucursales?.find(s => s.id === orden.sucursales_id)
                             const monedaOrden = sucOrden?.moneda ?? 'USD'
                             const simboloOrden = sucOrden?.simbolo ?? '$'
@@ -333,18 +510,20 @@ export default function Ordenes() {
                                 <tr key={orden.id} className="hover:bg-gray-50">
                                     <td className="px-6 py-4 text-gray-800">{orden.provedores?.nombre ?? '—'}</td>
                                     <td className="px-6 py-4 text-gray-600">{orden.sucursales?.nombre ?? '—'}</td>
-                                    <td className="px-6 py-4 text-gray-600">
+                                    <td className="px-6 py-4 text-gray-600 max-w-xs truncate">
                                         {orden.orden_de_compras_detalle?.map(d => d.productos?.nombre).join(', ')}
                                     </td>
-                                    <td>{formatMoneda(total, monedaOrden, simboloOrden)}</td>
+                                    <td className="px-6 py-4 font-medium text-gray-800">
+                                        {formatMoneda(total, monedaOrden, simboloOrden)}
+                                    </td>
                                     <td className="px-6 py-4">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          orden.estado === 'recibida'
-                              ? 'bg-green-100 text-green-700'
-                              : 'bg-yellow-100 text-yellow-700'
-                      }`}>
-                        {orden.estado}
-                      </span>
+                                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                                orden.estado === 'recibida'
+                                                    ? 'bg-green-100 text-green-700'
+                                                    : 'bg-yellow-100 text-yellow-700'
+                                            }`}>
+                                                {orden.estado}
+                                            </span>
                                     </td>
                                     <td className="px-6 py-4 text-gray-600">
                                         {new Date(orden.created_at).toLocaleDateString()}
