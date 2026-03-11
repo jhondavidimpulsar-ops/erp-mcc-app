@@ -12,7 +12,7 @@ const sucursalVacia = {
 }
 
 export default function Sucursales() {
-    const { sucursales, loading, crearSucursal, actualizarSucursal, eliminarSucursal } = useSucursales()
+    const { sucursales, loading, crearSucursal, actualizarSucursal, desactivarSucursal } = useSucursales()
     const [mostrarForm, setMostrarForm] = useState(false)
     const [form, setForm] = useState(sucursalVacia)
     const [editando, setEditando] = useState(null)
@@ -209,7 +209,7 @@ export default function Sucursales() {
                                     </button>
                                     <button
                                         className="text-red-500 hover:underline text-xs"
-                                        onClick={() => eliminarSucursal(sucursal.id, sucursal.auth_id)}
+                                        onClick={() => desactivarSucursal(sucursal.id)}
                                     >
                                         Eliminar
                                     </button>

@@ -11,6 +11,8 @@ export function useDashboard() {
     const [ventasRecientes, setVentasRecientes] = useState([])
     const [sucursales, setSucursales] = useState([])
     const [sucursalFiltro, setSucursalFiltro] = useState('')
+    const [stockBajo, setStockBajo] = useState([])
+    const [umbral, setUmbral] = useState(10)
     const [loading, setLoading] = useState(true)
 
     useEffect(() => {
@@ -20,6 +22,26 @@ export function useDashboard() {
     useEffect(() => {
         fetchStats()
     }, [sucursalFiltro, sucursales])
+
+    useEffect(() => {
+        fetchStockBajo()
+    }, [umbral])
+
+    async function fetchStockBajo() {
+        const { data } = await supabase
+            .from('inventario')
+            .select(`
+            cantidad,
+            productos(nombre, codigo),
+            sucursales(nombre)
+        `)
+            .lte('cantidad', umbral)
+            .gt('cantidad', 0)
+            .order('cantidad', { ascending: true })
+            .limit(15)
+
+        if (data) setStockBajo(data)
+    }
 
     async function fetchSucursales() {
         const { data } = await supabase.from('sucursales').select('id, nombre, moneda, simbolo')
@@ -95,5 +117,15 @@ export function useDashboard() {
         setLoading(false)
     }
 
-    return { stats, ventasRecientes, sucursales, sucursalFiltro, setSucursalFiltro, loading }
+    return {
+        stats,
+        ventasRecientes,
+        sucursales,
+        sucursalFiltro,
+        setSucursalFiltro,
+        stockBajo,      // ← agregar
+        umbral,         // ← agregar
+        setUmbral,      // ← agregar
+        loading
+    }
 }

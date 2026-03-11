@@ -35,5 +35,12 @@ export function useClientes() {
         if (!error) fetchClientes()
         return { error }
     }
-    return { clientes, loading, agregarCliente, actualizarCliente, eliminarCliente }
+    return {
+        clientes,
+        loading,
+        agregarCliente,
+        actualizarCliente,
+        eliminarCliente,
+        fetchClientes,
+    }
 }

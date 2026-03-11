@@ -79,15 +79,15 @@ export function useOrdenes() {
 
         if (error) return { error }
 
-        // 2. Obtener detalle de la orden
+        // 2. Obtener detalle de la orden con productos_id
         const { data: orden } = await supabase
             .from('orden_de_compras')
             .select(`
-      id,
-      provedores_id,
-      sucursales_id,
-      orden_de_compras_detalle(costo, cantidad)
-    `)
+            id,
+            provedores_id,
+            sucursales_id,
+            orden_de_compras_detalle(productos_id, costo, cantidad)
+        `)
             .eq('id', id)
             .single()
 
@@ -96,7 +96,16 @@ export function useOrdenes() {
             (acc, d) => acc + d.costo * d.cantidad, 0
         ) ?? 0
 
-        // 4. Crear CXP automáticamente
+        // 4. Aumentar inventario por cada producto
+        for (const item of orden.orden_de_compras_detalle) {
+            await supabase.rpc('aumentar_inventario', {
+                p_producto_id: item.productos_id,
+                p_sucursal_id: orden.sucursales_id,
+                p_cantidad: item.cantidad,
+            })
+        }
+
+        // 5. Crear CXP automáticamente
         await supabase.from('cxp').insert({
             orden_de_compras_id: orden.id,
             provedores_id: orden.provedores_id,

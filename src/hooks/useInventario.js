@@ -14,7 +14,7 @@ export function useInventario() {
             .from('inventario')
             .select(`
         *,
-        productos (nombre, codigo),
+        productos(nombre, codigo, costo),
         sucursales (nombre)
       `)
             .order('created_at', { ascending: false })

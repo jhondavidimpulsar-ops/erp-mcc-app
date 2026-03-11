@@ -29,16 +29,19 @@ export function useVentas() {
         const { data, error } = await supabase
             .from('ventas')
             .select(`
-                id,
-                created_at,
-                origen,
-                sucursales_id,
-                clientes(nombre),
-                sucursales(nombre),
-                empleados(nombre),
-                tipo_pago(nombre),
-                ventas_detalle(cantidad, productos(nombre, precio, costo))
-              `)
+            *,
+            clientes(nombre),
+            sucursales(nombre),
+            empleados(nombre),
+            tipo_pago(nombre),
+            estado,
+            origen,
+            ventas_detalle(
+                cantidad,
+                precio,
+                productos(nombre, codigo, precio, costo)
+            )
+        `)
             .order('created_at', { ascending: false })
 
         if (!error) setVentas(data)
@@ -58,6 +61,7 @@ export function useVentas() {
             ventas_id: data.id,
             productos_id: item.productos_id,
             cantidad: item.cantidad,
+            precio: item.precio, // ← precio histórico guardado
         }))
 
         const { error: errorDetalle } = await supabase
@@ -74,55 +78,25 @@ export function useVentas() {
             })
         }
 
-        const total = detalle.reduce((acc, item) => acc + item.precio * item.cantidad, 0)
         const costo = detalle.reduce((acc, item) => acc + (item.costo || 0) * item.cantidad, 0)
-
         await supabase.rpc('registrar_asiento_venta', {
             p_venta_id: data.id,
-            p_total: total,
+            p_total: data.total || detalle.reduce((acc, item) => acc + item.precio * item.cantidad, 0),
             p_costo: costo,
             p_sucursal_id: venta.sucursales_id,
         })
-
-        const { data: tipoPago } = await supabase
-            .from('tipo_pago')
-            .select('nombre')
-            .eq('id', venta.tipo_pago_id)
-            .single()
-
-        if (tipoPago?.nombre === 'credito') {
-            await supabase.rpc('registrar_cxc', {
-                p_venta_id: data.id,
-                p_cliente_id: venta.clientes_id,
-                p_monto: total,
-            })
-        }
 
         fetchVentas()
         return { error: null }
     }
 
-    async function eliminarVenta(venta) {
-        for (const detalle of venta.ventas_detalle) {
-            await supabase.rpc('restaurar_inventario', {
-                p_producto_id: detalle.productos_id,
-                p_sucursal_id: venta.sucursales_id,
-                p_cantidad: detalle.cantidad,
-            })
-        }
-
-        await supabase
-            .from('ventas_detalle')
-            .delete()
-            .eq('ventas_id', venta.id)
-
-        const { error } = await supabase
-            .from('ventas')
-            .delete()
-            .eq('id', venta.id)
-
+    async function cancelarVenta(id) {
+        const { error } = await supabase.rpc('cancelar_venta', {
+            p_venta_id: id,
+        })
         if (!error) fetchVentas()
         return { error }
     }
-    return { ventas, sucursales, inventario, loading, registrarVenta, eliminarVenta, fetchInventario }
+
+    return { ventas, sucursales, inventario, loading, registrarVenta, cancelarVenta, fetchInventario }
 }

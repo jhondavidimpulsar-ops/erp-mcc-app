@@ -10,12 +10,13 @@ export function useSucursales() {
     }, [])
 
     async function fetchSucursales() {
-        const { data, error } = await supabase
+        const { data } = await supabase
             .from('sucursales')
             .select('*')
-            .order('created_at', { ascending: true })
+            .eq('activo', true)
+            .order('created_at', { ascending: false })
 
-        if (!error) setSucursales(data)
+        if (data) setSucursales(data)
         setLoading(false)
     }
 
@@ -31,11 +32,15 @@ export function useSucursales() {
         return { error }
     }
 
-    async function eliminarSucursal(id) {
-        const { error } = await supabase.from('sucursales').delete().eq('id', id)
+    async function desactivarSucursal(id) {
+        const { error } = await supabase
+            .from('sucursales')
+            .update({ activo: false })
+            .eq('id', id)
+
         if (!error) fetchSucursales()
         return { error }
     }
 
-    return { sucursales, loading, crearSucursal, actualizarSucursal, eliminarSucursal }
+    return { sucursales, loading, crearSucursal, actualizarSucursal, desactivarSucursal }
 }

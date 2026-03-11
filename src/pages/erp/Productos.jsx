@@ -15,11 +15,14 @@ const productoVacio = {
 }
 
 export default function Productos() {
-    const { productos, categorias, sucursales, loading, agregarProducto, actualizarProducto, eliminarProducto } = useProductos()
+    const { productos, categorias, sucursales, loading, agregarProducto, actualizarProducto, eliminarProducto, subirImagen } = useProductos()
+    const [imagenArchivo, setImagenArchivo] = useState(null)
+    const [subiendoImagen, setSubiendoImagen] = useState(false)
     const [mostrarForm, setMostrarForm] = useState(false)
     const [form, setForm] = useState(productoVacio)
     const [editando, setEditando] = useState(null)
     const [error, setError] = useState(null)
+
 
     const handleChange = (e) => {
         setForm({ ...form, [e.target.name]: e.target.value })
@@ -29,33 +32,41 @@ export default function Productos() {
         e.preventDefault()
         setError(null)
 
-        const { error } = editando
+        const { error, data } = editando
             ? await actualizarProducto(editando, form)
             : await agregarProducto(form)
 
-        if (error) {
-            setError(error.message)
-            return
+        if (error) { setError(error.message); return }
+
+        // Si hay imagen, subirla
+        if (imagenArchivo) {
+            setSubiendoImagen(true)
+            const productoId = editando || data?.id
+            const { error: errorImg } = await subirImagen(productoId, imagenArchivo)
+            if (errorImg) setError('Producto guardado pero error al subir imagen.')
+            setSubiendoImagen(false)
         }
 
         setForm(productoVacio)
+        setImagenArchivo(null)
         setEditando(null)
         setMostrarForm(false)
     }
 
     const handleEditar = (producto) => {
-      setForm({
-        nombre: producto.nombre,
-        codigo: producto.codigo,
-        precio: producto.precio,
-        costo: producto.costo,
-        categorias_id: producto.categorias_id ?? '',
-        sucursales_id: producto.sucursales_id ?? '',
-        descripcion: producto.descripcion ?? '',
-        imagen_url: producto.imagen_url ?? '',
-      })
-      setEditando(producto.id)
-      setMostrarForm(true)
+        setForm({
+            nombre: producto.nombre,
+            codigo: producto.codigo,
+            precio: producto.precio,
+            costo: producto.costo,
+            categorias_id: producto.categorias_id ?? '',
+            sucursales_id: producto.sucursales_id ?? '',
+            descripcion: producto.descripcion ?? '',
+            imagen_url: producto.imagen_url ?? '',
+        })
+        setImagenArchivo(null)
+        setEditando(producto.id)
+        setMostrarForm(true)
     }
 
     const handleCancelar = () => {
@@ -128,6 +139,28 @@ export default function Productos() {
                             ))}
                         </select>
 
+                        <div className="col-span-2">
+                            <label className="text-sm font-medium text-gray-700 mb-1 block">
+                                Imagen del producto
+                            </label>
+                            <div className="flex items-center gap-4">
+                                {(imagenArchivo || form.imagen_url) && (
+                                    <img
+                                        src={imagenArchivo ? URL.createObjectURL(imagenArchivo) : form.imagen_url}
+                                        alt="preview"
+                                        className="w-16 h-16 object-cover rounded-lg border border-gray-200"
+                                    />
+                                )}
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    placeholder="Agrege la imagen"
+                                    className="text-sm text-gray-600"
+                                    onChange={(e) => setImagenArchivo(e.target.files[0])}
+                                />
+                            </div>
+                        </div>
+
                         {error && <p className="text-red-500 text-sm col-span-2">{error}</p>}
 
                         <div className="col-span-2 flex gap-3">
@@ -161,6 +194,7 @@ export default function Productos() {
                             <th className="px-6 py-3 text-left">Categoría</th>
                             <th className="px-6 py-3 text-left">Costo</th>
                             <th className="px-6 py-3 text-left">Precio</th>
+                            <th className="px-6 py-3 text-left">Imagen</th>
                             <th className="px-6 py-3 text-left">Acciones</th>
                         </tr>
                         </thead>
@@ -172,6 +206,19 @@ export default function Productos() {
                                 <td className="px-6 py-4 text-gray-600">{producto.categorias?.nombre ?? '—'}</td>
                                 <td className="px-6 py-4 text-gray-600">{formatMoneda(producto.costo, 'USD', '$')}</td>
                                 <td className="px-6 py-4 text-gray-600">{formatMoneda(producto.precio, 'USD', '$')}</td>
+                                <td className="px-6 py-4">
+                                    {producto.imagen_url ? (
+                                        <img
+                                            src={producto.imagen_url}
+                                            alt={producto.nombre}
+                                            className="w-10 h-10 object-cover rounded-lg"
+                                        />
+                                    ) : (
+                                        <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400 text-xs">
+                                            Sin imagen
+                                        </div>
+                                    )}
+                                </td>
 
                                 <td className="px-6 py-4 flex gap-2">
                                     <button

@@ -27,8 +27,10 @@ export function useProductos() {
 
     async function agregarProducto(producto) {
         const datos = {
-            ...producto,
-            sucursales_id: producto.sucursales_id || null,
+            nombre: producto.nombre,
+            codigo: producto.codigo,
+            precio: Number(producto.precio),
+            costo: Number(producto.costo),
             categorias_id: producto.categorias_id || null,
         }
 
@@ -40,18 +42,38 @@ export function useProductos() {
 
         if (!error && data) {
             const { data: sucursales } = await supabase.from('sucursales').select('id')
-
             const registrosInventario = sucursales.map(suc => ({
                 productos_id: data.id,
                 sucursales_id: suc.id,
                 cantidad: 0,
             }))
-
             await supabase.from('inventario').insert(registrosInventario)
             fetchProductos()
         }
 
-        return { error }
+        return { error, data }
+    }
+    async function subirImagen(productoId, archivo) {
+        const extension = archivo.name.split('.').pop()
+        const ruta = `${productoId}.${extension}`
+
+        const { error: errorSubida } = await supabase.storage
+            .from('productos')
+            .upload(ruta, archivo, { upsert: true })
+
+        if (errorSubida) return { error: errorSubida }
+
+        const { data } = supabase.storage
+            .from('productos')
+            .getPublicUrl(ruta)
+
+        const { error: errorUpdate } = await supabase
+            .from('productos')
+            .update({ imagen_url: data.publicUrl })
+            .eq('id', productoId)
+
+        if (!errorUpdate) fetchProductos()
+        return { error: errorUpdate }
     }
 
    async function actualizarProducto(id, producto) {
@@ -91,5 +113,6 @@ export function useProductos() {
         agregarProducto,
         actualizarProducto,
         eliminarProducto,
+        subirImagen
     }
 }

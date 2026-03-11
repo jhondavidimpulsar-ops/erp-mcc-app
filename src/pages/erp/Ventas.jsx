@@ -4,17 +4,15 @@ import { useVentas } from '../../hooks/useVentas'
 import { useClientes } from '../../hooks/useClientes'
 import { useProductos } from '../../hooks/useProductos'
 import { useEmpleado } from '../../hooks/useEmpleado'
-import { useSucursales } from '../../hooks/useSucursales'
-import { formatMoneda } from '../../utils/formatMoneda'
 import { supabase } from '../../supabaseClient'
 
 export default function Ventas() {
-    const { ventas, loading, registrarVenta, eliminarVenta, inventario, fetchInventario } = useVentas()
-    const { clientes } = useClientes()
+    const { ventas, loading, registrarVenta, cancelarVenta } = useVentas()
+    const { clientes, fetchClientes } = useClientes()
     const { productos } = useProductos()
     const { empleado } = useEmpleado()
-    const { sucursales } = useSucursales()
 
+    // Form nueva venta
     const [mostrarForm, setMostrarForm] = useState(false)
     const [sucursalId, setSucursalId] = useState('')
     const [clienteId, setClienteId] = useState('')
@@ -28,13 +26,29 @@ export default function Ventas() {
     const [cantidad, setCantidad] = useState(1)
     const [error, setError] = useState(null)
     const [exito, setExito] = useState(false)
+    const [cancelando, setCancelando] = useState(null)
 
-    const sucursalActual = sucursales?.find(s => s.id === sucursalId)
-    const moneda = sucursalActual?.moneda ?? 'USD'
-    const simbolo = sucursalActual?.simbolo ?? '$'
+    // Form cliente rápido
+    const [mostrarFormCliente, setMostrarFormCliente] = useState(false)
+    const [formCliente, setFormCliente] = useState({
+        nombre: '',
+        cedula: '',
+        telefono: '',
+        correo: '',
+    })
+    const [creandoCliente, setCreandoCliente] = useState(false)
+
+    // Búsqueda historial
+    const [busquedaHistorial, setBusquedaHistorial] = useState('')
+    const [fechaInicio, setFechaInicio] = useState('')
+    const [fechaFin, setFechaFin] = useState('')
 
     const fetchTiposPago = async () => {
-        const { data } = await supabase.from('tipo_pago').select('*')
+        const { data } = await supabase
+            .from('tipo_pago')
+            .select('*')
+            .neq('nombre', 'pendiente')
+            .neq('nombre', 'credito')
         if (data) setTiposPago(data)
     }
 
@@ -54,13 +68,6 @@ export default function Ventas() {
         const producto = productos.find(p => p.id === productoSeleccionado)
         if (!producto) return
 
-        const stock = inventario.find(i => i.productos_id === productoSeleccionado)
-        const cantidadEnCarrito = carrito.find(i => i.productos_id === productoSeleccionado)?.cantidad ?? 0
-
-        if (Number(cantidad) > (stock?.cantidad ?? 0) - cantidadEnCarrito) {
-            return setError(`Stock insuficiente. Disponible: ${(stock?.cantidad ?? 0) - cantidadEnCarrito}`)
-        }
-
         const existente = carrito.find(item => item.productos_id === productoSeleccionado)
         if (existente) {
             setCarrito(carrito.map(item =>
@@ -79,7 +86,6 @@ export default function Ventas() {
             }])
         }
 
-        setError(null)
         setProductoSeleccionado('')
         setBusquedaProducto('')
         setCantidad(1)
@@ -130,7 +136,7 @@ export default function Ventas() {
         }, 2000)
     }
 
-    const handleCancelar = () => {
+    const handleCancelarForm = () => {
         setMostrarForm(false)
         setCarrito([])
         setClienteId('')
@@ -138,17 +144,58 @@ export default function Ventas() {
         setBusquedaCliente('')
         setBusquedaProducto('')
         setSucursalId('')
+        setMostrarFormCliente(false)
         setError(null)
     }
 
-    const productosFiltrados = productos.filter(p => {
-        const stock = inventario.find(i => i.productos_id === p.id)
-        const tieneStock = stock && stock.cantidad > 0
-        const coincideBusqueda =
-            p.nombre.toLowerCase().includes(busquedaProducto.toLowerCase()) ||
-            p.codigo?.toLowerCase().includes(busquedaProducto.toLowerCase())
-        return tieneStock && coincideBusqueda
+    const handleCancelarVenta = async (id) => {
+        setCancelando(id)
+        await cancelarVenta(id)
+        setCancelando(null)
+    }
+
+    const handleCrearCliente = async () => {
+        if (!formCliente.nombre) return setError('El nombre es obligatorio.')
+        setCreandoCliente(true)
+
+        const { data, error } = await supabase
+            .from('clientes')
+            .insert({
+                nombre: formCliente.nombre,
+                cedula: formCliente.cedula || null,
+                telefono: formCliente.telefono || null,
+                correo: formCliente.correo || null,
+            })
+            .select()
+            .single()
+
+        if (error) {
+            setError(error.message)
+            setCreandoCliente(false)
+            return
+        }
+
+        await fetchClientes()
+        setClienteId(data.id)
+        setBusquedaCliente(data.nombre)
+        setMostrarFormCliente(false)
+        setFormCliente({ nombre: '', cedula: '', telefono: '', correo: '' })
+        setCreandoCliente(false)
+    }
+
+    const ventasFiltradas = ventas.filter(venta => {
+        const nombreCliente = venta.clientes?.nombre?.toLowerCase() ?? ''
+        const matchBusqueda = nombreCliente.includes(busquedaHistorial.toLowerCase())
+        const fecha = new Date(venta.created_at)
+        const matchInicio = fechaInicio ? fecha >= new Date(fechaInicio) : true
+        const matchFin = fechaFin ? fecha <= new Date(fechaFin + 'T23:59:59') : true
+        return matchBusqueda && matchInicio && matchFin
     })
+
+    const productosFiltrados = productos.filter(p =>
+        p.nombre.toLowerCase().includes(busquedaProducto.toLowerCase()) ||
+        p.codigo?.toLowerCase().includes(busquedaProducto.toLowerCase())
+    )
 
     const clientesFiltrados = clientes.filter(c =>
         c.nombre.toLowerCase().includes(busquedaCliente.toLowerCase()) ||
@@ -169,6 +216,7 @@ export default function Ventas() {
                 )}
             </div>
 
+            {/* Formulario nueva venta */}
             {mostrarForm && (
                 <div className="bg-white rounded-lg shadow-sm p-6 mb-6 flex flex-col gap-6">
                     <h3 className="text-lg font-bold text-gray-800">Nueva venta</h3>
@@ -179,17 +227,14 @@ export default function Ventas() {
                         </div>
                     )}
 
+                    {/* Sucursal + Cliente */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <label className="text-sm font-medium text-gray-700 mb-1 block">Sucursal</label>
                             <select
                                 className="border border-gray-300 rounded-lg px-4 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 value={sucursalId}
-                                onChange={(e) => {
-                                    setSucursalId(e.target.value)
-                                    if (e.target.value) fetchInventario(e.target.value)
-                                    setCarrito([])
-                                }}
+                                onChange={(e) => setSucursalId(e.target.value)}
                             >
                                 <option value="">Selecciona una sucursal</option>
                                 {empleado?.empleados_sucursales?.map(es => (
@@ -209,40 +254,111 @@ export default function Ventas() {
                                 onChange={(e) => { setBusquedaCliente(e.target.value); setClienteId('') }}
                             />
                             {busquedaCliente && !clienteId && (
-                                <div className="border border-gray-200 rounded-lg max-h-40 overflow-y-auto mt-1">
+                                <div className="border border-gray-200 rounded-lg max-h-40 overflow-y-auto mt-1 bg-white shadow-md z-10">
                                     {clientesFiltrados.length === 0 ? (
-                                        <p className="px-4 py-2 text-gray-400 text-sm">No se encontraron clientes</p>
-                                    ) : (
-                                        clientesFiltrados.map(c => (
-                                            <div
-                                                key={c.id}
-                                                className="px-4 py-2 hover:bg-gray-50 cursor-pointer text-sm"
-                                                onClick={() => { setClienteId(c.id); setBusquedaCliente(c.nombre) }}
+                                        <div className="px-4 py-2">
+                                            <p className="text-gray-400 text-sm mb-2">No se encontraron clientes</p>
+                                            <button
+                                                className="text-blue-600 text-sm hover:underline"
+                                                onClick={() => {
+                                                    setMostrarFormCliente(true)
+                                                    setFormCliente({ nombre: busquedaCliente, cedula: '', telefono: '', correo: '' })
+                                                }}
                                             >
-                                                {c.nombre} — {c.cedula ?? 'Sin cédula'}
+                                                + Crear cliente "{busquedaCliente}"
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            {clientesFiltrados.map(c => (
+                                                <div
+                                                    key={c.id}
+                                                    className="px-4 py-2 hover:bg-gray-50 cursor-pointer text-sm"
+                                                    onClick={() => { setClienteId(c.id); setBusquedaCliente(c.nombre) }}
+                                                >
+                                                    {c.nombre} — {c.cedula ?? 'Sin cédula'}
+                                                </div>
+                                            ))}
+                                            <div className="px-4 py-2 border-t border-gray-100">
+                                                <button
+                                                    className="text-blue-600 text-sm hover:underline"
+                                                    onClick={() => {
+                                                        setMostrarFormCliente(true)
+                                                        setFormCliente({ nombre: busquedaCliente, cedula: '', telefono: '', correo: '' })
+                                                    }}
+                                                >
+                                                    + Crear nuevo cliente
+                                                </button>
                                             </div>
-                                        ))
+                                        </>
                                     )}
                                 </div>
                             )}
-                            {clienteId && <p className="text-green-600 text-xs mt-1">✅ Cliente seleccionado</p>}
+                            {clienteId && (
+                                <p className="text-green-600 text-xs mt-1">✅ Cliente seleccionado</p>
+                            )}
+
+                            {/* Form cliente rápido */}
+                            {mostrarFormCliente && (
+                                <div className="border border-blue-200 rounded-lg p-4 mt-2 bg-blue-50">
+                                    <h4 className="text-sm font-medium text-blue-800 mb-3">Nuevo cliente</h4>
+                                    <div className="flex flex-col gap-2">
+                                        <input
+                                            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            placeholder="Nombre *"
+                                            value={formCliente.nombre}
+                                            onChange={(e) => setFormCliente({ ...formCliente, nombre: e.target.value })}
+                                        />
+                                        <input
+                                            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            placeholder="Cédula / RUC"
+                                            value={formCliente.cedula}
+                                            onChange={(e) => setFormCliente({ ...formCliente, cedula: e.target.value })}
+                                        />
+                                        <input
+                                            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            placeholder="Teléfono"
+                                            value={formCliente.telefono}
+                                            onChange={(e) => setFormCliente({ ...formCliente, telefono: e.target.value })}
+                                        />
+                                        <input
+                                            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            placeholder="Correo"
+                                            value={formCliente.correo}
+                                            onChange={(e) => setFormCliente({ ...formCliente, correo: e.target.value })}
+                                        />
+                                        <div className="flex gap-2">
+                                            <button
+                                                className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 transition disabled:opacity-50"
+                                                onClick={handleCrearCliente}
+                                                disabled={creandoCliente}
+                                            >
+                                                {creandoCliente ? 'Creando...' : 'Crear cliente'}
+                                            </button>
+                                            <button
+                                                className="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-300 transition"
+                                                onClick={() => setMostrarFormCliente(false)}
+                                            >
+                                                Cancelar
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
 
+                    {/* Agregar productos */}
                     <div>
                         <label className="text-sm font-medium text-gray-700 mb-1 block">
                             Agregar producto <span className="text-gray-400 font-normal">(Enter para agregar)</span>
                         </label>
-                        {!sucursalId && (
-                            <p className="text-yellow-600 text-xs mb-2">⚠️ Selecciona una sucursal primero para ver los productos disponibles.</p>
-                        )}
                         <div className="flex gap-2 items-start">
                             <div className="flex flex-col flex-1">
                                 <input
                                     className="border border-gray-300 rounded-lg px-4 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     placeholder="Buscar por nombre o código..."
                                     value={busquedaProducto}
-                                    disabled={!sucursalId}
                                     onChange={(e) => {
                                         setBusquedaProducto(e.target.value)
                                         setProductoSeleccionado('')
@@ -254,29 +370,19 @@ export default function Ventas() {
                                 {mostrarSugerencias && busquedaProducto && (
                                     <div className="border border-gray-200 rounded-lg max-h-48 overflow-y-auto mt-1 z-10 bg-white shadow-md">
                                         {productosFiltrados.length === 0 ? (
-                                            <p className="px-4 py-2 text-gray-400 text-sm">No se encontraron productos con stock</p>
+                                            <p className="px-4 py-2 text-gray-400 text-sm">No se encontraron productos</p>
                                         ) : (
-                                            productosFiltrados.map(p => {
-                                                const stock = inventario.find(i => i.productos_id === p.id)
-                                                return (
-                                                    <div
-                                                        key={p.id}
-                                                        className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm flex justify-between items-center"
-                                                        onMouseDown={(e) => e.preventDefault()}
-                                                        onClick={() => handleSeleccionarProducto(p)}
-                                                    >
-                                                        <span>{p.codigo} - {p.nombre}</span>
-                                                        <div className="flex gap-3 ml-4">
-                                                            <span className="text-gray-500">
-                                                                {formatMoneda(p.precio, moneda, simbolo)}
-                                                            </span>
-                                                            <span className={`font-medium ${(stock?.cantidad ?? 0) <= 5 ? 'text-red-500' : 'text-green-600'}`}>
-                                                                Stock: {stock?.cantidad ?? 0}
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                )
-                                            })
+                                            productosFiltrados.map(p => (
+                                                <div
+                                                    key={p.id}
+                                                    className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm flex justify-between items-center"
+                                                    onMouseDown={(e) => e.preventDefault()}
+                                                    onClick={() => handleSeleccionarProducto(p)}
+                                                >
+                                                    <span>{p.codigo} - {p.nombre}</span>
+                                                    <span className="text-gray-500 ml-4">${p.precio}</span>
+                                                </div>
+                                            ))
                                         )}
                                     </div>
                                 )}
@@ -298,13 +404,13 @@ export default function Ventas() {
                         </div>
                     </div>
 
+                    {/* Carrito */}
                     {carrito.length > 0 && (
                         <div>
                             <label className="text-sm font-medium text-gray-700 mb-2 block">Productos en la venta</label>
                             <table className="w-full text-sm mb-2">
                                 <thead className="bg-gray-50 text-gray-500 uppercase text-xs">
                                 <tr>
-                                    <th className="px-4 py-2 text-left">Código</th>
                                     <th className="px-4 py-2 text-left">Producto</th>
                                     <th className="px-4 py-2 text-left">Cantidad</th>
                                     <th className="px-4 py-2 text-left">Precio</th>
@@ -315,11 +421,10 @@ export default function Ventas() {
                                 <tbody className="divide-y divide-gray-100">
                                 {carrito.map(item => (
                                     <tr key={item.productos_id}>
-                                        <td className="px-4 py-2">{item.codigo}</td>
                                         <td className="px-4 py-2">{item.nombre}</td>
                                         <td className="px-4 py-2">{item.cantidad}</td>
-                                        <td className="px-4 py-2">{formatMoneda(item.precio, moneda, simbolo)}</td>
-                                        <td className="px-4 py-2 font-medium">{formatMoneda(item.precio * item.cantidad, moneda, simbolo)}</td>
+                                        <td className="px-4 py-2">${item.precio}</td>
+                                        <td className="px-4 py-2 font-medium">${(item.precio * item.cantidad).toFixed(2)}</td>
                                         <td className="px-4 py-2">
                                             <button
                                                 className="text-red-500 hover:underline text-xs"
@@ -332,12 +437,11 @@ export default function Ventas() {
                                 ))}
                                 </tbody>
                             </table>
-                            <p className="text-right font-bold text-gray-800 text-lg">
-                                Total: {formatMoneda(total, moneda, simbolo)}
-                            </p>
+                            <p className="text-right font-bold text-gray-800 text-lg">Total: ${total.toFixed(2)}</p>
                         </div>
                     )}
 
+                    {/* Método de pago */}
                     <div>
                         <label className="text-sm font-medium text-gray-700 mb-1 block">Método de pago</label>
                         <select
@@ -363,7 +467,7 @@ export default function Ventas() {
                         </button>
                         <button
                             className="bg-gray-200 text-gray-700 px-6 py-2 rounded-lg hover:bg-gray-300 transition text-sm"
-                            onClick={handleCancelar}
+                            onClick={handleCancelarForm}
                         >
                             Cancelar
                         </button>
@@ -371,11 +475,51 @@ export default function Ventas() {
                 </div>
             )}
 
+            {/* Búsqueda historial */}
+            <div className="bg-white rounded-lg shadow-sm p-4 mb-4 flex flex-wrap gap-4 items-end">
+                <div className="flex-1 min-w-48">
+                    <label className="text-xs font-medium text-gray-500 mb-1 block">Buscar por cliente</label>
+                    <input
+                        className="border border-gray-300 rounded-lg px-4 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                        placeholder="Nombre del cliente..."
+                        value={busquedaHistorial}
+                        onChange={(e) => setBusquedaHistorial(e.target.value)}
+                    />
+                </div>
+                <div>
+                    <label className="text-xs font-medium text-gray-500 mb-1 block">Desde</label>
+                    <input
+                        className="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                        type="date"
+                        value={fechaInicio}
+                        onChange={(e) => setFechaInicio(e.target.value)}
+                    />
+                </div>
+                <div>
+                    <label className="text-xs font-medium text-gray-500 mb-1 block">Hasta</label>
+                    <input
+                        className="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                        type="date"
+                        value={fechaFin}
+                        onChange={(e) => setFechaFin(e.target.value)}
+                    />
+                </div>
+                {(busquedaHistorial || fechaInicio || fechaFin) && (
+                    <button
+                        className="text-sm text-gray-400 hover:text-gray-600"
+                        onClick={() => { setBusquedaHistorial(''); setFechaInicio(''); setFechaFin('') }}
+                    >
+                        Limpiar filtros
+                    </button>
+                )}
+            </div>
+
+            {/* Historial */}
             <div className="bg-white rounded-lg shadow-sm overflow-hidden">
                 {loading ? (
                     <p className="p-6 text-gray-500">Cargando ventas...</p>
-                ) : ventas.length === 0 ? (
-                    <p className="p-6 text-gray-500">No hay ventas registradas aún.</p>
+                ) : ventasFiltradas.length === 0 ? (
+                    <p className="p-6 text-gray-500">No hay ventas que coincidan.</p>
                 ) : (
                     <table className="w-full text-sm">
                         <thead className="bg-gray-50 text-gray-500 uppercase text-xs">
@@ -384,19 +528,17 @@ export default function Ventas() {
                             <th className="px-6 py-3 text-left">Sucursal</th>
                             <th className="px-6 py-3 text-left">Empleado</th>
                             <th className="px-6 py-3 text-left">Pago</th>
+                            <th className="px-6 py-3 text-left">Origen</th>
                             <th className="px-6 py-3 text-left">Total</th>
                             <th className="px-6 py-3 text-left">Fecha</th>
-                            <th className="px-6 py-3 text-left">Origen</th>
-                            <th className="px-6 py-3 text-left">Acciones</th>
+                            <th className="px-6 py-3 text-left">Estado</th>
+                            <th className="px-6 py-3 text-left">Acción</th>
                         </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
-                        {ventas.map(venta => {
-                            const sucVenta = sucursales?.find(s => s.id === venta.sucursales_id)
-                            const monedaVenta = sucVenta?.moneda ?? 'USD'
-                            const simboloVenta = sucVenta?.simbolo ?? '$'
+                        {ventasFiltradas.map(venta => {
                             const totalVenta = venta.ventas_detalle?.reduce(
-                                (acc, d) => acc + d.productos?.precio * d.cantidad, 0
+                                (acc, d) => acc + (d.precio ?? d.productos?.precio ?? 0) * d.cantidad, 0
                             )
                             return (
                                 <tr key={venta.id} className="hover:bg-gray-50">
@@ -405,28 +547,42 @@ export default function Ventas() {
                                     <td className="px-6 py-4 text-gray-600">{venta.empleados?.nombre ?? '—'}</td>
                                     <td className="px-6 py-4 text-gray-600">{venta.tipo_pago?.nombre ?? '—'}</td>
                                     <td className="px-6 py-4">
-                                        {venta.origen === 'ecommerce' ? (
-                                            <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded-full text-xs font-medium">
-                                                 🛒 Online
+                                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                                venta.origen === 'ecommerce'
+                                                    ? 'bg-purple-100 text-purple-700'
+                                                    : 'bg-blue-100 text-blue-700'
+                                            }`}>
+                                                {venta.origen === 'ecommerce' ? '🛒 Online' : 'ERP'}
                                             </span>
-                                        ) : (
-                                            <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded-full text-xs font-medium">
-                                              ERP
-                                            </span>
-                                        )}
                                     </td>
                                     <td className="px-6 py-4 font-medium text-gray-800">
-                                        {formatMoneda(totalVenta, monedaVenta, simboloVenta)}
+                                        ${totalVenta?.toFixed(2) ?? '0.00'}
                                     </td>
                                     <td className="px-6 py-4 text-gray-600">
                                         {new Date(venta.created_at).toLocaleDateString()}
                                     </td>
                                     <td className="px-6 py-4">
+                                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                                venta.estado === 'cancelada'
+                                                    ? 'bg-red-100 text-red-700'
+                                                    : venta.estado === 'completada'
+                                                        ? 'bg-green-100 text-green-700'
+                                                        : 'bg-yellow-100 text-yellow-700'
+                                            }`}>
+                                                {venta.estado ?? 'completada'}
+                                            </span>
+                                    </td>
+                                    <td className="px-6 py-4">
                                         <button
-                                            className="text-red-500 hover:underline text-xs"
-                                            onClick={() => eliminarVenta(venta)}
+                                            className="text-red-500 hover:underline text-xs disabled:opacity-40"
+                                            onClick={() => handleCancelarVenta(venta.id)}
+                                            disabled={venta.estado === 'cancelada' || cancelando === venta.id}
                                         >
-                                            Eliminar
+                                            {cancelando === venta.id
+                                                ? 'Cancelando...'
+                                                : venta.estado === 'cancelada'
+                                                    ? 'Cancelada'
+                                                    : 'Cancelar'}
                                         </button>
                                     </td>
                                 </tr>
