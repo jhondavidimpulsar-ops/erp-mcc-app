@@ -171,7 +171,7 @@ export default function Contabilidad() {
                                 </div>
                             )
                         })}
-                    </div>s
+                    </div>
 
                     {/* Resumen por sucursal */}
                     <div className="bg-white rounded-lg shadow-sm overflow-hidden">

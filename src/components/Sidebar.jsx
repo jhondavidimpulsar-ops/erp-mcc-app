@@ -25,7 +25,9 @@ export default function Sidebar() {
         { to: '/empleados', label: 'Empleados' },
         { to: '/sucursales', label: 'Sucursales'},
         { to: '/reportes', label: 'Reportes' },
+        { to: '/rentabilidad', label: 'Rentabilidad' },
         { to: '/contabilidad', label: 'Contabilidad' },
+        { to: '/admin', label: 'Admin' },
     ]
 
     return (

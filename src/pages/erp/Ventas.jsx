@@ -280,6 +280,103 @@ export default function Ventas() {
         XLSX.writeFile(workbook, `ventas_${new Date().toISOString().split('T')[0]}.xlsx`)
     }
 
+    const generarFactura = (venta) => {
+        const doc = new jsPDF()
+        const totalVenta = venta.ventas_detalle?.reduce(
+            (acc, d) => acc + (d.precio ?? d.productos?.precio ?? 0) * d.cantidad, 0
+        ) ?? 0
+
+        // ── Encabezado ──────────────────────────────────────────
+        doc.setFillColor(37, 99, 235)
+        doc.rect(0, 0, 220, 35, 'F')
+
+        doc.setTextColor(255, 255, 255)
+        doc.setFontSize(20)
+        doc.setFont('helvetica', 'bold')
+        doc.text('FACTURA / RECIBO', 14, 15)
+
+        doc.setFontSize(10)
+        doc.setFont('helvetica', 'normal')
+        doc.text('MCC Mccraft Tools', 14, 23)
+        doc.text(`Fecha: ${new Date(venta.created_at).toLocaleDateString()}`, 14, 29)
+
+        // Número de factura (esquina derecha)
+        doc.setFontSize(11)
+        doc.setFont('helvetica', 'bold')
+        doc.text(`# ${venta.id.slice(0, 8).toUpperCase()}`, 150, 20)
+
+        // ── Datos cliente y venta ────────────────────────────────
+        doc.setTextColor(31, 41, 55)
+        doc.setFontSize(11)
+        doc.setFont('helvetica', 'bold')
+        doc.text('Datos del cliente', 14, 48)
+
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(10)
+        doc.text(`Nombre: ${venta.clientes?.nombre ?? '—'}`, 14, 56)
+        doc.text(`Sucursal: ${venta.sucursales?.nombre ?? '—'}`, 14, 62)
+        doc.text(`Atendido por: ${venta.empleados?.nombre ?? '—'}`, 14, 68)
+        doc.text(`Método de pago: ${venta.tipo_pago?.nombre ?? '—'}`, 14, 74)
+        doc.text(`Origen: ${venta.origen === 'ecommerce' ? 'Tienda Online' : 'ERP'}`, 14, 80)
+
+        // ── Tabla de productos ───────────────────────────────────
+        autoTable(doc, {
+            startY: 90,
+            head: [['Código', 'Producto', 'Cant.', 'Precio unit.', 'Subtotal']],
+            body: venta.ventas_detalle?.map(d => {
+                const precio = d.precio ?? d.productos?.precio ?? 0
+                return [
+                    d.productos?.codigo ?? '—',
+                    d.productos?.nombre ?? '—',
+                    d.cantidad,
+                    `$${Number(precio).toFixed(2)}`,
+                    `$${(precio * d.cantidad).toFixed(2)}`,
+                ]
+            }) ?? [],
+            styles: { fontSize: 9 },
+            headStyles: { fillColor: [37, 99, 235], textColor: 255 },
+            alternateRowStyles: { fillColor: [249, 250, 251] },
+            columnStyles: {
+                0: { cellWidth: 25 },
+                1: { cellWidth: 80 },
+                2: { cellWidth: 15, halign: 'center' },
+                3: { cellWidth: 30, halign: 'right' },
+                4: { cellWidth: 30, halign: 'right' },
+            },
+        })
+
+        // ── Total ────────────────────────────────────────────────
+        const finalY = doc.lastAutoTable.finalY + 8
+        doc.setDrawColor(229, 231, 235)
+        doc.line(14, finalY, 196, finalY)
+
+        doc.setFontSize(13)
+        doc.setFont('helvetica', 'bold')
+        doc.setTextColor(31, 41, 55)
+        doc.text('TOTAL:', 140, finalY + 10)
+        doc.setTextColor(37, 99, 235)
+        doc.text(`$${totalVenta.toFixed(2)}`, 175, finalY + 10)
+
+        // ── Estado ───────────────────────────────────────────────
+        if (venta.estado === 'cancelada') {
+            doc.setTextColor(220, 38, 38)
+            doc.setFontSize(28)
+            doc.setFont('helvetica', 'bold')
+            doc.setGState(new doc.GState({ opacity: 0.15 }))
+            doc.text('CANCELADA', 45, 160, { angle: 35 })
+            doc.setGState(new doc.GState({ opacity: 1 }))
+        }
+
+        // ── Pie de página ────────────────────────────────────────
+        doc.setTextColor(156, 163, 175)
+        doc.setFontSize(8)
+        doc.setFont('helvetica', 'normal')
+        doc.text('Gracias por su compra — MCC Mccraft Tools', 14, 280)
+        doc.text(`Generado el ${new Date().toLocaleString()}`, 14, 285)
+
+        doc.save(`factura_${venta.id.slice(0, 8)}.pdf`)
+    }
+
     return (
         <Layout>
             <div className="flex justify-between items-center mb-6">
@@ -678,6 +775,27 @@ export default function Ventas() {
                                                     ? 'Cancelada'
                                                     : 'Cancelar'}
                                         </button>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                        <div className="flex gap-2 items-center">
+                                            <button
+                                                className="text-blue-600 hover:underline text-xs"
+                                                onClick={() => generarFactura(venta)}
+                                            >
+                                                🧾 Factura
+                                            </button>
+                                            <button
+                                                className="text-red-500 hover:underline text-xs disabled:opacity-40"
+                                                onClick={() => handleCancelarVenta(venta.id)}
+                                                disabled={venta.estado === 'cancelada' || cancelando === venta.id}
+                                            >
+                                                {cancelando === venta.id
+                                                    ? 'Cancelando...'
+                                                    : venta.estado === 'cancelada'
+                                                        ? 'Cancelada'
+                                                        : 'Cancelar'}
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             )

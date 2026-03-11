@@ -15,20 +15,20 @@ export function useCXP() {
         const { data, error } = await supabase
             .from('cxp')
             .select(`
-        id,
-        monto_total,
-        monto_pagado,
-        estado,
-        created_at,
-        provedores(id, nombre),
-        orden_de_compras(id, sucursales_id, sucursales(nombre, moneda, simbolo)),
-        cxp_abonos(
-          id,
-          monto,
-          created_at,
-          tipo_pago(nombre)
-        )
-      `)
+                id,
+                monto_total,
+                monto_pagado,
+                estado,
+                created_at,
+                provedores(id, nombre),
+                orden_de_compras(id, sucursales_id, sucursales(nombre, moneda, simbolo)),
+                cxp_abonos(
+                    id,
+                    monto,
+                    created_at,
+                    tipo_pago(nombre)
+                )
+            `)
             .order('created_at', { ascending: false })
 
         if (!error) setCxps(data)
@@ -44,13 +44,37 @@ export function useCXP() {
         if (data) setTiposPago(data)
     }
 
+    async function registrarActividad(accion, descripcion, metadata = null) {
+        await supabase.from('actividad').insert({
+            empleados_id: null,
+            accion,
+            modulo: 'cxp',
+            descripcion,
+            metadata,
+        })
+    }
+
     async function registrarAbono(cxpId, monto, tipoPagoId) {
+        const cxp = cxps.find(c => c.id === cxpId)
+
         const { error } = await supabase.rpc('registrar_abono_cxp', {
             p_cxp_id: cxpId,
             p_monto: Number(monto),
             p_tipo_pago_id: tipoPagoId,
         })
-        if (!error) fetchCXPs()
+
+        if (!error) {
+            const saldoAnterior = cxp.monto_total - cxp.monto_pagado
+            const nuevoSaldo = saldoAnterior - Number(monto)
+
+            await registrarActividad(
+                'abono_cxp',
+                `Abono de $${Number(monto).toFixed(2)} — Proveedor: ${cxp.provedores?.nombre ?? '—'} — Saldo restante: $${nuevoSaldo.toFixed(2)}`,
+                { cxp_id: cxpId, monto: Number(monto), proveedor: cxp.provedores?.nombre }
+            )
+            fetchCXPs()
+        }
+
         return { error }
     }
 
