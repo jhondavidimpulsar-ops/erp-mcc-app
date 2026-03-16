@@ -763,19 +763,7 @@ export default function Ventas() {
                                                 {venta.estado ?? 'completada'}
                                             </span>
                                     </td>
-                                    <td className="px-6 py-4">
-                                        <button
-                                            className="text-red-500 hover:underline text-xs disabled:opacity-40"
-                                            onClick={() => handleCancelarVenta(venta.id)}
-                                            disabled={venta.estado === 'cancelada' || cancelando === venta.id}
-                                        >
-                                            {cancelando === venta.id
-                                                ? 'Cancelando...'
-                                                : venta.estado === 'cancelada'
-                                                    ? 'Cancelada'
-                                                    : 'Cancelar'}
-                                        </button>
-                                    </td>
+
                                     <td className="px-6 py-4">
                                         <div className="flex gap-2 items-center">
                                             <button
