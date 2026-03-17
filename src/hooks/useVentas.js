@@ -58,10 +58,16 @@ export function useVentas() {
         })
     }
 
-    async function registrarVenta(venta, detalle) {
+    // esCxc: boolean — si true, la venta queda pendiente y se crea registro en cxc
+    async function registrarVenta(venta, detalle, esCxc = false) {
+        const ventaPayload = {
+            ...venta,
+            estado: esCxc ? 'pendiente' : 'completada',
+        }
+
         const { data, error } = await supabase
             .from('ventas')
-            .insert(venta)
+            .insert(ventaPayload)
             .select()
             .single()
 
@@ -98,12 +104,27 @@ export function useVentas() {
             p_sucursal_id: venta.sucursales_id,
         })
 
-        // Registrar actividad
+        // Si es crédito, crear registro en CXC
+        if (esCxc) {
+            const { error: errorCxc } = await supabase.from('cxc').insert({
+                ventas_id: data.id,
+                clientes_id: venta.clientes_id,
+                monto_total: total,
+                monto_pagado: 0,
+                estado: 'pendiente',
+            })
+
+            if (errorCxc) {
+                // La venta ya se creó — logueamos el error pero no revertimos
+                console.error('Error al crear CXC:', errorCxc.message)
+            }
+        }
+
         await registrarActividad(
             venta.empleados_id,
             'venta_creada',
-            `Venta por $${total.toFixed(2)} — ${detalle.length} producto(s)`,
-            { venta_id: data.id, total, productos: detalle.map(d => d.nombre) }
+            `Venta ${esCxc ? 'a crédito' : ''} por $${total.toFixed(2)} — ${detalle.length} producto(s)`,
+            { venta_id: data.id, total, esCxc, productos: detalle.map(d => d.nombre) }
         )
 
         fetchVentas()
@@ -111,7 +132,6 @@ export function useVentas() {
     }
 
     async function cancelarVenta(id) {
-        // Obtener datos de la venta antes de cancelar
         const venta = ventas.find(v => v.id === id)
 
         const { error } = await supabase.rpc('cancelar_venta', {
@@ -119,13 +139,19 @@ export function useVentas() {
         })
 
         if (!error) {
-            // Registrar actividad
+            // Sincronizar CXC si existe
+            await supabase
+                .from('cxc')
+                .update({ estado: 'anulado', monto_pagado: 0 })
+                .eq('ventas_id', id)
+
             await registrarActividad(
                 venta?.empleados_id ?? null,
                 'venta_cancelada',
                 `Venta cancelada — Cliente: ${venta?.clientes?.nombre ?? '—'}`,
                 { venta_id: id }
             )
+
             fetchVentas()
         }
 

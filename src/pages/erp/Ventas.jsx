@@ -21,6 +21,7 @@ export default function Ventas() {
     const [clienteId, setClienteId] = useState('')
     const [busquedaCliente, setBusquedaCliente] = useState('')
     const [tipoPagoId, setTipoPagoId] = useState('')
+    const [esCxc, setEsCxc] = useState(false)
     const [tiposPago, setTiposPago] = useState([])
     const [carrito, setCarrito] = useState([])
     const [productoSeleccionado, setProductoSeleccionado] = useState('')
@@ -106,6 +107,16 @@ export default function Ventas() {
         setCarrito(carrito.filter(item => item.productos_id !== productos_id))
     }
 
+    const handleSeleccionarPago = (valor) => {
+        if (valor === 'cxc') {
+            setEsCxc(true)
+            setTipoPagoId('')
+        } else {
+            setEsCxc(false)
+            setTipoPagoId(valor)
+        }
+    }
+
     const total = carrito.reduce((acc, item) => acc + item.precio * item.cantidad, 0)
 
     const handleConfirmar = async () => {
@@ -113,17 +124,18 @@ export default function Ventas() {
         if (!sucursalId) return setError('Selecciona una sucursal.')
         if (!clienteId) return setError('Selecciona un cliente.')
         if (carrito.length === 0) return setError('Agrega al menos un producto.')
-        if (!tipoPagoId) return setError('Selecciona un método de pago.')
+        if (!esCxc && !tipoPagoId) return setError('Selecciona un método de pago.')
         if (!empleado) return setError('No se encontró el empleado.')
 
         const venta = {
             clientes_id: clienteId,
             empleados_id: empleado.id,
             sucursales_id: sucursalId,
-            tipo_pago_id: tipoPagoId,
+            // Si es CXC no se envía tipo_pago_id (queda null en DB)
+            ...(tipoPagoId ? { tipo_pago_id: tipoPagoId } : {}),
         }
 
-        const { error } = await registrarVenta(venta, carrito)
+        const { error } = await registrarVenta(venta, carrito, esCxc)
         if (error) { setError(error.message); return }
 
         setExito(true)
@@ -133,6 +145,7 @@ export default function Ventas() {
             setCarrito([])
             setClienteId('')
             setTipoPagoId('')
+            setEsCxc(false)
             setBusquedaCliente('')
             setBusquedaProducto('')
             setSucursalId('')
@@ -144,6 +157,7 @@ export default function Ventas() {
         setCarrito([])
         setClienteId('')
         setTipoPagoId('')
+        setEsCxc(false)
         setBusquedaCliente('')
         setBusquedaProducto('')
         setSucursalId('')
@@ -235,7 +249,7 @@ export default function Ventas() {
                     venta.clientes?.nombre ?? '—',
                     venta.sucursales?.nombre ?? '—',
                     venta.empleados?.nombre ?? '—',
-                    venta.tipo_pago?.nombre ?? '—',
+                    venta.tipo_pago?.nombre ?? (venta.estado === 'pendiente' ? 'Crédito' : '—'),
                     venta.origen === 'ecommerce' ? 'Online' : 'ERP',
                     `$${totalVenta?.toFixed(2) ?? '0.00'}`,
                     new Date(venta.created_at).toLocaleDateString(),
@@ -259,7 +273,7 @@ export default function Ventas() {
                 'Cliente': venta.clientes?.nombre ?? '—',
                 'Sucursal': venta.sucursales?.nombre ?? '—',
                 'Empleado': venta.empleados?.nombre ?? '—',
-                'Método de pago': venta.tipo_pago?.nombre ?? '—',
+                'Método de pago': venta.tipo_pago?.nombre ?? (venta.estado === 'pendiente' ? 'Crédito' : '—'),
                 'Origen': venta.origen === 'ecommerce' ? 'Online' : 'ERP',
                 'Total': totalVenta?.toFixed(2) ?? '0.00',
                 'Fecha': new Date(venta.created_at).toLocaleDateString(),
@@ -286,7 +300,6 @@ export default function Ventas() {
             (acc, d) => acc + (d.precio ?? d.productos?.precio ?? 0) * d.cantidad, 0
         ) ?? 0
 
-        // ── Encabezado ──────────────────────────────────────────
         doc.setFillColor(37, 99, 235)
         doc.rect(0, 0, 220, 35, 'F')
 
@@ -300,12 +313,10 @@ export default function Ventas() {
         doc.text('MCC Mccraft Tools', 14, 23)
         doc.text(`Fecha: ${new Date(venta.created_at).toLocaleDateString()}`, 14, 29)
 
-        // Número de factura (esquina derecha)
         doc.setFontSize(11)
         doc.setFont('helvetica', 'bold')
         doc.text(`# ${venta.id.slice(0, 8).toUpperCase()}`, 150, 20)
 
-        // ── Datos cliente y venta ────────────────────────────────
         doc.setTextColor(31, 41, 55)
         doc.setFontSize(11)
         doc.setFont('helvetica', 'bold')
@@ -316,10 +327,12 @@ export default function Ventas() {
         doc.text(`Nombre: ${venta.clientes?.nombre ?? '—'}`, 14, 56)
         doc.text(`Sucursal: ${venta.sucursales?.nombre ?? '—'}`, 14, 62)
         doc.text(`Atendido por: ${venta.empleados?.nombre ?? '—'}`, 14, 68)
-        doc.text(`Método de pago: ${venta.tipo_pago?.nombre ?? '—'}`, 14, 74)
+        doc.text(
+            `Método de pago: ${venta.tipo_pago?.nombre ?? (venta.estado === 'pendiente' ? 'Crédito / CXC' : '—')}`,
+            14, 74
+        )
         doc.text(`Origen: ${venta.origen === 'ecommerce' ? 'Tienda Online' : 'ERP'}`, 14, 80)
 
-        // ── Tabla de productos ───────────────────────────────────
         autoTable(doc, {
             startY: 90,
             head: [['Código', 'Producto', 'Cant.', 'Precio unit.', 'Subtotal']],
@@ -345,7 +358,6 @@ export default function Ventas() {
             },
         })
 
-        // ── Total ────────────────────────────────────────────────
         const finalY = doc.lastAutoTable.finalY + 8
         doc.setDrawColor(229, 231, 235)
         doc.line(14, finalY, 196, finalY)
@@ -357,7 +369,6 @@ export default function Ventas() {
         doc.setTextColor(37, 99, 235)
         doc.text(`$${totalVenta.toFixed(2)}`, 175, finalY + 10)
 
-        // ── Estado ───────────────────────────────────────────────
         if (venta.estado === 'cancelada') {
             doc.setTextColor(220, 38, 38)
             doc.setFontSize(28)
@@ -367,7 +378,15 @@ export default function Ventas() {
             doc.setGState(new doc.GState({ opacity: 1 }))
         }
 
-        // ── Pie de página ────────────────────────────────────────
+        if (venta.estado === 'pendiente') {
+            doc.setTextColor(217, 119, 6)
+            doc.setFontSize(28)
+            doc.setFont('helvetica', 'bold')
+            doc.setGState(new doc.GState({ opacity: 0.15 }))
+            doc.text('CRÉDITO', 55, 160, { angle: 35 })
+            doc.setGState(new doc.GState({ opacity: 1 }))
+        }
+
         doc.setTextColor(156, 163, 175)
         doc.setFontSize(8)
         doc.setFont('helvetica', 'normal')
@@ -489,7 +508,6 @@ export default function Ventas() {
                                 <p className="text-green-600 text-xs mt-1">✅ Cliente seleccionado</p>
                             )}
 
-                            {/* Form cliente rápido */}
                             {mostrarFormCliente && (
                                 <div className="border border-blue-200 rounded-lg p-4 mt-2 bg-blue-50">
                                     <h4 className="text-sm font-medium text-blue-800 mb-3">Nuevo cliente</h4>
@@ -634,17 +652,42 @@ export default function Ventas() {
 
                     {/* Método de pago */}
                     <div>
-                        <label className="text-sm font-medium text-gray-700 mb-1 block">Método de pago</label>
-                        <select
-                            className="border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            value={tipoPagoId}
-                            onChange={(e) => setTipoPagoId(e.target.value)}
-                        >
-                            <option value="">Selecciona un método</option>
+                        <label className="text-sm font-medium text-gray-700 mb-2 block">Método de pago</label>
+                        <div className="flex flex-wrap gap-2">
                             {tiposPago.map(tp => (
-                                <option key={tp.id} value={tp.id}>{tp.nombre}</option>
+                                <button
+                                    key={tp.id}
+                                    onClick={() => handleSeleccionarPago(tp.id)}
+                                    className={`px-4 py-2 rounded-lg border text-sm transition ${
+                                        tipoPagoId === tp.id && !esCxc
+                                            ? 'bg-blue-600 text-white border-blue-600'
+                                            : 'bg-white text-gray-700 border-gray-300 hover:border-blue-400'
+                                    }`}
+                                >
+                                    {tp.nombre}
+                                </button>
                             ))}
-                        </select>
+
+                            {/* Opción especial CXC */}
+                            <button
+                                onClick={() => handleSeleccionarPago('cxc')}
+                                className={`px-4 py-2 rounded-lg border text-sm transition font-medium ${
+                                    esCxc
+                                        ? 'bg-amber-500 text-white border-amber-500'
+                                        : 'bg-white text-amber-600 border-amber-400 hover:border-amber-500'
+                                }`}
+                            >
+                                📋 Crédito / CXC
+                            </button>
+                        </div>
+
+                        {/* Aviso cuando se selecciona CXC */}
+                        {esCxc && (
+                            <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
+                                <strong>Venta a crédito:</strong> se registrará con estado <em>pendiente</em> y se creará
+                                automáticamente una cuenta por cobrar (CXC) para este cliente.
+                            </div>
+                        )}
                     </div>
 
                     {error && <p className="text-red-500 text-sm">{error}</p>}
@@ -736,15 +779,22 @@ export default function Ventas() {
                                     <td className="px-6 py-4 text-gray-800">{venta.clientes?.nombre ?? '—'}</td>
                                     <td className="px-6 py-4 text-gray-600">{venta.sucursales?.nombre ?? '—'}</td>
                                     <td className="px-6 py-4 text-gray-600">{venta.empleados?.nombre ?? '—'}</td>
-                                    <td className="px-6 py-4 text-gray-600">{venta.tipo_pago?.nombre ?? '—'}</td>
+                                    <td className="px-6 py-4 text-gray-600">
+                                        {venta.tipo_pago?.nombre
+                                            ? venta.tipo_pago.nombre
+                                            : venta.estado === 'pendiente'
+                                                ? <span className="px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700">Crédito</span>
+                                                : '—'
+                                        }
+                                    </td>
                                     <td className="px-6 py-4">
-                                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                                venta.origen === 'ecommerce'
-                                                    ? 'bg-purple-100 text-purple-700'
-                                                    : 'bg-blue-100 text-blue-700'
-                                            }`}>
-                                                {venta.origen === 'ecommerce' ? '🛒 Online' : 'ERP'}
-                                            </span>
+                                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                            venta.origen === 'ecommerce'
+                                                ? 'bg-purple-100 text-purple-700'
+                                                : 'bg-blue-100 text-blue-700'
+                                        }`}>
+                                            {venta.origen === 'ecommerce' ? '🛒 Online' : 'ERP'}
+                                        </span>
                                     </td>
                                     <td className="px-6 py-4 font-medium text-gray-800">
                                         ${totalVenta?.toFixed(2) ?? '0.00'}
@@ -753,17 +803,16 @@ export default function Ventas() {
                                         {new Date(venta.created_at).toLocaleDateString()}
                                     </td>
                                     <td className="px-6 py-4">
-                                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                                venta.estado === 'cancelada'
-                                                    ? 'bg-red-100 text-red-700'
-                                                    : venta.estado === 'completada'
-                                                        ? 'bg-green-100 text-green-700'
-                                                        : 'bg-yellow-100 text-yellow-700'
-                                            }`}>
-                                                {venta.estado ?? 'completada'}
-                                            </span>
+                                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                            venta.estado === 'cancelada'
+                                                ? 'bg-red-100 text-red-700'
+                                                : venta.estado === 'pendiente'
+                                                    ? 'bg-amber-100 text-amber-700'
+                                                    : 'bg-green-100 text-green-700'
+                                        }`}>
+                                            {venta.estado === 'pendiente' ? 'Crédito / Pendiente' : venta.estado ?? 'completada'}
+                                        </span>
                                     </td>
-
                                     <td className="px-6 py-4">
                                         <div className="flex gap-2 items-center">
                                             <button
